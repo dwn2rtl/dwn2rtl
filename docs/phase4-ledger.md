@@ -483,3 +483,24 @@ the 2.1x encoder-LUT calibration gap does not apply — this is a flop count, wh
 agree on.
 
 **Suite: `pytest tests/test_estimate.py` 17 passed.**
+
+## 6. Built — yosys in CI, on Linux only
+
+`apt install yosys` added to the Ubuntu jobs, plus a step that **fails the run if yosys was
+installed and is not usable**. Same reasoning as "The gate actually ran", one notch weaker:
+`estimate` is optional, so its tests skipping without yosys is correct — but on a runner where we
+just installed it, a skip means the estimate tests silently did not run and the install achieved
+nothing.
+
+**Linux only, deliberately.** ~9 MB from apt against a 564 MB OSS CAD Suite download on Windows,
+which would also ship its own iverilog into the runner and could shadow the simulator the gate
+uses. Covering `estimate` on one platform is enough; the gate itself still runs on both.
+
+⚠️ **Unverified: Ubuntu ships yosys 0.33 and this was developed against 0.68.** Thirty-five
+releases apart. The parser depends on `synth -top M -flatten`, `abc -lut 6`, and `stat` printing
+`NNN $lut` — all long-stable, none of them confirmed on 0.33 from here, because installing it
+locally needs an interactive sudo password. **CI is the test.** If it fails, the likely culprits
+in order are the `stat` cell-name format, then `-flatten`.
+
+Recording this as unverified rather than asserting it works is the point: the two defects CI has
+already caught were both claims that happened to hold on one machine.

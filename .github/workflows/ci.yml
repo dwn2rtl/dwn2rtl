@@ -48,11 +48,15 @@ jobs:
           python-version: ${{ matrix.python }}
           cache: pip
 
-      - name: Install iverilog (Linux)
+      # yosys is Linux-only here on purpose. `estimate` is the one feature the roadmap calls
+      # optional, and it is ~9 MB from apt against a 564 MB OSS CAD Suite download on Windows --
+      # which also ships its own iverilog and would shadow the simulator the gate runs against.
+      # Covering `estimate` on one platform is enough; the gate itself runs on both.
+      - name: Install iverilog and yosys (Linux)
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y iverilog
+          sudo apt-get install -y iverilog yosys
 
       # winget is not available on GitHub's Windows runners; Chocolatey is preinstalled.
       # Whichever installer is used, note that it does NOT put iverilog on PATH -- see the
@@ -80,6 +84,24 @@ jobs:
               print('FATAL: no simulator in CI.\n', e)
               sys.exit(1)
           print('simulator:', sim.describe())
+          PY
+
+      # Same reasoning as the step above, one notch weaker. `estimate` is optional, so its tests
+      # SKIP without yosys and that is correct -- but on a runner where we just installed it, a
+      # skip means the estimate tests silently did not run and the install achieved nothing.
+      - name: The estimate tests can actually run (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          python - <<'PY'
+          import sys
+          from dwn2rtl.estimate import YosysNotFound, find_yosys
+          try:
+              y = find_yosys()
+          except YosysNotFound as e:
+              print('FATAL: yosys was installed but is not usable.\n', e)
+              sys.exit(1)
+          print('yosys:', y.describe())
           PY
 
       - name: Tests
