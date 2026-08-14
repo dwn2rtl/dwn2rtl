@@ -3,7 +3,7 @@
 **Goal.** Get from a checkpoint to Verilog that a simulator says is bit-exact against the golden
 model. This is the milestone; phase 0 was scaffolding and phases 2–3 are packaging around it.
 
-**Status: OPEN.**
+**Status: CLOSED.** Retrospective in `phase1-report.md`.
 
 > Conventions in `overview.md` §6. Entries oldest first, recording *built* / *hit* / *decided*.
 > Reversed decisions stay, struck through, with the reason.
@@ -24,6 +24,7 @@ model. This is the milestone; phase 0 was scaffolding and phases 2–3 are packa
 | 3 | **`build()` in `__init__.py`** | wires `build_core` -> `build_encoder` -> `generate`, in that order. The encoder reads the core's real pipeline depth from `dwn_core_params.vh`, so it must run second |
 | 4 | **`rtl/tb/dwn_top_tb.v`** | currently a 0-byte file. Half the gate does not exist |
 | 5 | **the gate: `iverilog` green end to end** | the only unit that proves any of the others |
+| 6 | **`verify.py`** | ⬅ pulled forward from phase 2: the tests had grown their own copy of simulator discovery, and two implementations would drift |
 
 ---
 
@@ -399,4 +400,74 @@ top       5 cycles latency, II=1
 vectors   core 504, top 519, 3/3 classes hit
 wrote     rtl/ (17 files)
 ```
+
+---
+
+## 5. Built — `verify.py`
+
+Pulled forward from phase 2, because `test_build.py` had grown its own copy of simulator
+discovery and two implementations of *"where is iverilog"* would drift. That copy is deleted; the
+tests now import from `verify.py`, which is what users actually hit.
+
+The whole user journey now runs from the terminal:
+
+```
+$ dwn2rtl verify rtl/
+iverilog 12.0 (devel) (s20150603-1539-g2693dd32b) (C:\iverilog\bin\iverilog.exe)
+  dwn_core  504 vectors  PASS
+  dwn_top   519 vectors  PASS
+RESULT   PASS
+```
+
+**Roadmap V3 closed — verification no longer needs a Vivado licence.** The roadmap called this
+*"the largest single barrier to anyone using the tool"*: every other vendor dependency was the
+user's own synthesis, which they were doing anyway, but this one made *verification* require a
+licence. It does not any more.
+
+### The organising principle: not checking is not passing
+
+Every design decision in this module is a form of that.
+
+| situation | reported as |
+|---|---|
+| testbench absent | `MISSING`, and the run fails |
+| testbench present but 0 bytes | `MISSING`, and the run fails |
+| vectors absent | `MISSING`, named, *before* the simulator runs |
+| compile error | `ERROR`, never a skip |
+| no `RESULT` line printed | `ERROR` — the simulation did not finish |
+| testbench printed PASS **and** a nonzero mismatch count | `ERROR` — its summary contradicts its own count |
+| no levels ran at all | **FAIL** |
+
+That last one is not hypothetical: `all([])` is `True`, so without an explicit emptiness check a
+directory with nothing runnable in it would print a green `RESULT` having checked nothing. It has
+its own test, and that test needs no simulator because it is a property of the report.
+
+The missing-vectors check earns its place too: without it `$readmemh` merely warns, the testbench
+compares against `x`, and the failure surfaces two layers from its cause.
+
+### Localization is surfaced, not left to be inferred
+
+The two-testbench split only pays off if the tool says which half broke, at the moment it
+matters. Verified against a genuinely corrupted comparator:
+
+```
+  dwn_core  504 vectors  PASS
+  dwn_top   519 vectors  FAIL (49 mismatches)
+  the core is bit-exact and the top is not, so the fault is in the thermometer encoder
+RESULT   FAIL
+```
+
+### Simulator discovery, and why it is not a one-liner
+
+PATH first, then the directories Windows installers actually use. This is the phase 0 finding
+made permanent: `winget install Icarus.Verilog` succeeds, installs to `C:\iverilog\bin`, and adds
+**nothing** to PATH — so a PATH-only search would tell a user who plainly has a simulator that
+they have none. `--simulator` takes an explicit path for anyone with several or one somewhere
+unusual, and a not-found error lists what was searched plus the install command for three
+platforms.
+
+⚠️ **`iverilog -V` exits 255.** Checking its return code would report a working simulator as
+broken. Deliberately ignored, with a test.
+
+**Suite: 172 passed. `pytest -m sim`: 23 passed.**
 
