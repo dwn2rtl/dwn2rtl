@@ -113,3 +113,100 @@ cannot pass by coincidence.
 
 **Suite: 82 passed, 1 xfailed** (the empty `dwn_top_tb.v`, still tracked).
 
+---
+
+## 2. Built — `checkpoint.py`
+
+Roadmap **Q8 closed**. The tool now defines its input format and owns both ends of it.
+
+### The three accepted shapes converge
+
+| shape | how a user gets it |
+|---|---|
+| `{'model': ..., 'thermometer': ...}` | plain `torch.save` — no `dwn2rtl` import in their training script |
+| `{config, state_dict, thermometer, results}` | the study repo's existing checkpoints, unchanged |
+| live objects | `from_model(model, thermometer)`, the notebook path |
+
+Asserted equal across all five fixture shapes: same `config`, same `summary()`. A checkpoint's
+meaning must not depend on how it happened to be saved.
+
+**Nothing in `checkpoint.py` imports the upstream DWN package.** Every fact is read from tensors
+or from duck-typed attributes, so a user does not need `torch_dwn` installed to convert a
+checkpoint they already have, and an upstream version bump cannot break loading.
+
+**Decided: `num_classes` comes off `GroupSum`, matched by class name.** It is the one fact no
+tensor knows — `GroupSum` has no parameters, so it contributes nothing to a `state_dict`. Matched
+on `type(m).__name__ == 'GroupSum'` plus a `k` attribute rather than an `isinstance` check,
+because the alternative is importing upstream.
+
+**Decided: the API is lazy at the package root.** `dwn2rtl.load` / `.save` / `.from_model` work
+as if imported in `__init__.py`, but via PEP 562 `__getattr__`. `checkpoint.py` imports torch at
+module level, so a plain top-level import would have quietly cost *every* invocation a
+multi-second torch import — including `dwn2rtl verify`, which never reads a checkpoint. Both
+properties are now asserted in one test: `False True` for torch-in-`sys.modules` before and after
+touching `dwn2rtl.load`.
+
+### The errors are part of the contract, and are tested as such
+
+The failure this module exists to prevent produces a design that synthesizes cleanly, reports a
+plausible area, and classifies at chance. A user told *"invalid checkpoint"* re-saves it the same
+way; a user told *the thermometer is a separate object* fixes it in one line. So the text is
+asserted, not just the exception type — it must name the missing object, say **why**, and show
+the fix:
+
+```
+this looks like a bare state_dict -- it has the model weights but NO THERMOMETER.
+  keys: '0.luts', '0._LUTLayer__dummy_mapping', '0.mapping.weights', '1.luts', ...
+
+  A DWN is two objects. The thermometer is fitted before training and is not a
+  parameter of the model, so torch.save(model.state_dict()) drops the encoder
+  entirely -- and the encoder can be many times the size of the network it feeds.
+
+  Re-save with both:
+      torch.save({'model': model, 'thermometer': thermometer}, 'model.pt')
+```
+
+Four rejected shapes, each with its own message: a bare `state_dict`, a model alone, a dict with
+a model but no thermometer, and `{'model': <a state_dict>, 'thermometer': ...}` — which *has* the
+encoder but has lost `GroupSum` and with it the only record of the class count.
+
+### Validation catches corruptions that would otherwise emit a plausible wrong design
+
+Every path in runs the same checks. The one worth naming:
+
+⚠️ **Transposed thresholds.** A `(z, features)` matrix has the right rank, the right dtype and
+entirely plausible values, and would emit an encoder with features and thresholds swapped —
+silently. It is detectable only because `config` states `z` independently, so the two can be
+cross-checked:
+
+```
+thermometer thresholds are (2, 4) but config says thermometer_bits=2.
+This looks TRANSPOSED -- the expected shape is (features, bits_per_feature), i.e. (4, 2).
+```
+
+Also caught: `n` disagreeing with table width, `layers` disagreeing with the tables, a class
+count that does not divide the final layer (GroupSum would zero-pad silently), wiring that reads
+past the input width, a non-power-of-two table, non-contiguous layer indices, and 1-D thresholds.
+
+### ⚠️ Hit: the fixture was inventing an accuracy, and `emit_core` demanded one
+
+The first fixture wrote `results: {'final_acc': 0.0, 'best_acc': 0.0}` into every checkpoint. It
+was untrained, so that number was fabricated to fill a field — and `final_acc: 0.0` reads as
+*"this model scores zero"*, not *"nobody measured"*. Removed; the fixture now records no results
+at all, which is both honest and the case a real user hits constantly.
+
+That immediately exposed a defect on the other side: **`emit_core.py` read
+`ck['results']['final_acc']` unconditionally**, for a header comment. Accuracy is metadata — no
+part of the emitted hardware depends on it — yet a user who saved a model without recording a
+training statistic would have got a `KeyError` out of a code generator, over a comment. Now:
+
+```
+// accuracy   : not recorded in the checkpoint
+```
+
+**Defaulting to `0.0` was rejected for the same reason the fixture's was.** A comment that
+confidently states a wrong number is worse than no comment. Output is byte-identical to before
+for any checkpoint that *does* carry results, so nothing the study repo verified has moved.
+
+**Suite: 117 passed, 1 xfailed.**
+
