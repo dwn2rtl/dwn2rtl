@@ -63,9 +63,21 @@ def cmd_build(args):
 
 
 def cmd_verify(args):
-    return _not_yet(
-        'verify', 2,
-        'needs verify.py to find a simulator, compile, run, and parse PASS/FAIL.')
+    # verify never reads a checkpoint, so this path must not import torch. That is why the
+    # import is here and why verify.py imports nothing from checkpoint.py.
+    from .verify import SimulatorNotFound, verify
+
+    try:
+        report = verify(args.dir, iverilog=args.simulator)
+    except (FileNotFoundError, SimulatorNotFound) as e:
+        print(f'dwn2rtl verify: {e}', file=sys.stderr)
+        return 1
+
+    for line in report.lines():
+        print(line)
+    # Exit code, not just text: this is what a CI job branches on. Anything other than every
+    # level passing is a failure, including a level that could not run at all.
+    return 0 if report.ok else 1
 
 
 def cmd_estimate(args):
@@ -94,6 +106,8 @@ def build_parser():
 
     v = sub.add_parser('verify', help='compile and run the emitted testbenches')
     v.add_argument('dir', help='a directory produced by `dwn2rtl build`')
+    v.add_argument('--simulator', metavar='EXE',
+                   help='path to iverilog, if it is not on PATH and not in a usual place')
     v.set_defaults(func=cmd_verify)
 
     e = sub.add_parser('estimate', help='resource estimate via yosys, if it is on PATH')

@@ -45,6 +45,11 @@ _LAZY = {
     'CheckpointError': 'checkpoint',
     'build': 'build',
     'BuildReport': 'build',
+    # verify has no torch dependency of its own, but it is listed here for one surface rather
+    # than two -- and so that `import dwn2rtl` stays a numpy-only import either way.
+    'verify': 'verify',
+    'find_simulator': 'verify',
+    'SimulatorNotFound': 'verify',
 }
 
 
@@ -69,11 +74,14 @@ __all__ = [
     'CheckpointError',
     'Pipeline',
     'Precision',
+    'SimulatorNotFound',
     'build',
+    'find_simulator',
     'from_model',
     'load',
     'normalize',
     'precision_for',
     'required_int_bits',
     'save',
+    'verify',
 ]
