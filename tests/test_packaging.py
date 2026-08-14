@@ -114,7 +114,6 @@ def test_bare_invocation_prints_help_and_fails():
 
 
 @pytest.mark.parametrize('argv', [
-    ['verify', 'rtl'],
     ['estimate', 'rtl'],
 ])
 def test_unimplemented_subcommands_exit_two_not_zero(argv):
@@ -123,18 +122,21 @@ def test_unimplemented_subcommands_exit_two_not_zero(argv):
     Exit 0 from a command that did nothing is indistinguishable from success, which is how a
     build script ends up "passing" without producing a design.
 
-    `build` left this list in phase 1 -- it is implemented. Exit codes are now meaningful and
-    distinct: 0 built, 1 the checkpoint was bad, 2 not implemented.
+    `build` and `verify` both left this list in phase 1. Only `estimate` remains, in phase 3.
     """
     from dwn2rtl.cli import main
     assert main(argv) == 2
 
 
-def test_build_of_a_missing_file_exits_one_not_two():
+@pytest.mark.parametrize('argv', [
+    ['build', 'definitely-not-here.pt', '--out', 'rtl'],
+    ['verify', 'definitely-not-a-directory'],
+])
+def test_bad_input_exits_one_not_two(argv):
     """1 is "your input was wrong", 2 is "this tool cannot do that yet". Collapsing them would
     make a script unable to tell a typo from an unfinished feature."""
     from dwn2rtl.cli import main
-    assert main(['build', 'definitely-not-here.pt', '--out', 'rtl']) == 1
+    assert main(argv) == 1
 
 
 def test_build_rejects_missing_out():

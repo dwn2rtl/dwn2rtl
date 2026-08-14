@@ -11,7 +11,6 @@ vectors. Structural tests cannot close that gap and should not be mistaken for h
 """
 
 import os
-import shutil
 import subprocess
 
 import pytest
@@ -22,27 +21,22 @@ from dwn2rtl.build import PRIMITIVES, build
 
 ALL_SHAPES = sorted(fixtures.SHAPES)
 
-# Where a simulator hides. PATH first, then the places Windows installers actually use --
-# `winget install Icarus.Verilog` adds NOTHING to PATH (phase 0 ledger), so PATH-only discovery
-# would report "no simulator" to a user who plainly has one.
-#
-# ⚠️ This duplicates what verify.py will own in phase 2. It is here because the gate cannot wait
-# for verify.py, and phase 2 should DELETE this and import from there.
-_FALLBACKS = [r'C:\iverilog\bin', r'C:\Program Files\iverilog\bin']
+
+def _simulator():
+    """Simulator discovery lives in verify.py and nowhere else.
+
+    This file briefly carried its own copy, written before verify.py existed so the gate did not
+    have to wait for it. That copy is now deleted -- two implementations of "where is iverilog"
+    would drift, and the one users actually hit is verify.py's.
+    """
+    from dwn2rtl.verify import SimulatorNotFound, find_simulator
+    try:
+        return find_simulator()
+    except SimulatorNotFound:
+        return None
 
 
-def find_iverilog():
-    exe = shutil.which('iverilog')
-    if exe:
-        return exe, shutil.which('vvp')
-    for d in _FALLBACKS:
-        cand = os.path.join(d, 'iverilog.exe')
-        if os.path.exists(cand):
-            return cand, os.path.join(d, 'vvp.exe')
-    return None, None
-
-
-requires_sim = pytest.mark.skipif(find_iverilog()[0] is None,
+requires_sim = pytest.mark.skipif(_simulator() is None,
                                   reason='no Verilog simulator on PATH or in a known location')
 
 
@@ -250,15 +244,15 @@ def run_gate(outdir, testbench):
     cwd matters: the testbench does $readmemh("x_quant.hex") and `include "top_params.vh",
     both resolved against the simulator's working directory, not against the source file.
     """
-    iverilog, vvp = find_iverilog()
+    sim = _simulator()
     sources = [f for f in os.listdir(outdir) if f.endswith('.v')]
     out = f'{os.path.basename(testbench)}.vvp'
 
-    compile_ = subprocess.run([iverilog, '-o', out, *sources, testbench],
+    compile_ = subprocess.run([sim.compiler, '-o', out, *sources, testbench],
                               cwd=outdir, capture_output=True, text=True)
     assert compile_.returncode == 0, f'iverilog failed:\n{compile_.stderr}'
 
-    run = subprocess.run([vvp, out], cwd=outdir, capture_output=True, text=True)
+    run = subprocess.run([sim.runner, out], cwd=outdir, capture_output=True, text=True)
     assert run.returncode == 0, f'vvp failed:\n{run.stderr}'
     return run.stdout
 
