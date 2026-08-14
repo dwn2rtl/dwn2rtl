@@ -11,6 +11,7 @@ break silently between "it works on my machine" and "a user ran pip install":
 Each one has a specific failure it exists to catch, recorded at the test.
 """
 
+import os
 import subprocess
 import sys
 from importlib.resources import files
@@ -66,6 +67,32 @@ def test_verilog_primitives_ship_with_the_package():
         f = rtl / name
         assert f.is_file(), f'{name} is not packaged'
         assert 'module' in f.read_text(encoding='utf-8'), f'{name} packaged but has no module'
+
+
+@pytest.mark.parametrize('name', PRIMITIVES + ['tb/dwn_core_tb.v', 'tb/dwn_top_tb.v'])
+def test_shipped_verilog_cites_nothing_a_user_cannot_open(name):
+    """The primitives are COPIED INTO every emitted directory, so their comments are
+    documentation the user reads -- and they were imported verbatim from the study repo.
+
+    They cited `docs/reference/checkpoint-format.md`, `docs/jsc/dse-plan.md` and
+    `probe-results.md`, none of which exist in this repository, and referred to "Phase 1" and
+    "CLAUDE.md" meaning the STUDY repo's phases and rules. A reference that resolves nowhere is
+    worse than none: it tells the reader there is an authority to consult and then wastes their
+    time looking for it.
+    """
+    text = (files('dwn2rtl') / 'rtl' / name).read_text(encoding='utf-8')
+    # CLAUDE.md is in .gitignore, so it is not in the repository at all -- a reader who follows
+    # that citation finds nothing, exactly like the study-repo paths beside it. It was missing
+    # from this list on the first pass, which is how the dwn_top_tb.v reference survived the
+    # commit that removed the other five.
+    for dangling in ('docs/reference/', 'docs/jsc/', 'probe-results', 'brief ', 'CLAUDE.md'):
+        assert dangling not in text, f'{name} cites {dangling!r}, which is not in this repo'
+    # This repo's own docs are fair game, but only ones that exist.
+    import re
+    for cited in re.findall(r'docs/[\w./-]+\.md', text):
+        assert os.path.exists(
+            os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), cited)), \
+            f'{name} cites {cited}, which does not exist'
 
 
 def test_testbenches_ship_with_the_package():

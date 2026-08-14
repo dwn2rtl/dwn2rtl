@@ -1,6 +1,6 @@
 // GATE 1, TOP LEVEL -- quantized features in, class index out.
 //
-// The companion to dwn_core_tb. Together they are the one non-negotiable rule (CLAUDE.md):
+// The companion to dwn_core_tb. Together they are the one non-negotiable rule:
 // emitted RTL is not correct until a simulator says it matches the golden model on every
 // vector. An emitter's own read-back is not that check -- the study repo has a case where one
 // reported 20/20 correct while the design was wrong on 958 of 1,504 vectors.
