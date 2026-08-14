@@ -320,3 +320,83 @@ contract, and a traceback buries the part the user needs.
 
 **Suite: 146 passed, 1 xfailed. `pytest -m sim`: 6 passed.**
 
+---
+
+## 4. Built — `dwn_top_tb.v`, and the gate is complete
+
+The 0-byte file from commit `646aebe` is written. **Both levels now pass on every shape:**
+
+```
+             core                     top
+tiny         504 vectors  PASS        511 vectors  PASS
+single       504 vectors  PASS        511 vectors  PASS
+n6           504 vectors  PASS        519 vectors  PASS
+ten_class    504 vectors  PASS        519 vectors  PASS
+all_fixed    504 vectors  PASS        511 vectors  PASS
+```
+
+**The encoder is now verified**, and that is the point of this unit rather than a detail. It is
+the piece published DWN resource counts leave out; on the smallest studied model it is fourteen
+times the network it feeds. An unverified encoder is most of an unverified design.
+
+### Why two testbenches instead of one
+
+The split is what makes a failure **localize itself**:
+
+| | meaning |
+|---|---|
+| core PASS, top FAIL | the encoder. Nothing else needs re-examining |
+| core FAIL, top FAIL | the network; fix that first and this follows |
+
+A single top-level testbench would say only that something, somewhere, was wrong — and the
+encoder and the core are emitted by different files, from different parts of the checkpoint.
+
+**That claim is now proved rather than asserted in a comment.** A test corrupts one comparator
+constant in `thermometer_encoder.v` and requires the core gate to still **PASS** while the top
+gate **FAILS** — including the emitted hint *"If dwn_core_tb PASSED, the fault is in the
+thermometer encoder."* If both failed, or neither, the split would be buying nothing.
+
+### Derived, never retyped
+
+`LATENCY` comes from `dwn_top_params.vh` and `IDX_W` from `top_params.vh`, both written by the
+same build that emitted the pipeline. The study repo's testbench **hardcoded `IDX_W` to 3**,
+which left the upper bits undriven below five classes and truncated the comparison above eight —
+a 10-class design was checked on three of its four index bits and passed. `ten_class` is in the
+gate specifically to keep that closed.
+
+Comparison is `!==`, not `!=`, so an `x` or `z` counts as a failure rather than propagating into
+a comparison that returns `x`. That matters more at this level than at the core: undriven encoder
+bits are a real possibility here.
+
+### ✅ The strict xfail did its job
+
+`test_top_testbench_has_content` was an expected failure with `strict=True`. Writing the
+testbench turned it into:
+
+```
+[XPASS(strict)] dwn_top_tb.v is a 0-byte file -- commit 646aebe landed it empty.
+```
+
+— a hard failure that **forced the marker's deletion** rather than leaving a stale TODO nobody
+greps for. Replaced by `test_both_testbenches_have_content`, which asserts both files contain a
+`module` and a `$readmemh`, so a truncated testbench cannot ship. The build-time
+empty-testbench guard stays too, as the second layer.
+
+**The suite now has no xfails at all: 154 passed. `pytest -m sim`: 13 passed.**
+
+A clean end-to-end CLI run, no warnings:
+
+```
+$ dwn2rtl build model.dwn --out rtl/ --input-bits 8
+features 8, classes 3, layers [12, 9], n=6, z=3   from checkpoint
+integer bits 0                                    derived, exact
+frac bits 8 -> Q0.8 signed (9-bit)                from --input-bits, provably lossless
+
+core      21 nodes, 4 cycles
+encoder   23 comparators of 24 thermometer bits
+top       5 cycles latency, II=1
+
+vectors   core 504, top 519, 3/3 classes hit
+wrote     rtl/ (17 files)
+```
+
