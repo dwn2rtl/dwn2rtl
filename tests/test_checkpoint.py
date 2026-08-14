@@ -102,6 +102,62 @@ def test_numpy_thresholds_are_accepted():
 
 
 # ---------------------------------------------------------------------------------------
+# The input scaling -- part of the hardware's contract, not metadata
+# ---------------------------------------------------------------------------------------
+
+def test_a_scaler_is_preserved_not_dropped():
+    """Found by testing against a real study-repo checkpoint: JSC carries {'mean', 'scale'} and
+    the normalized form threw it away -- while the emitted encoder's header claimed "the
+    checkpoint carries the scaler for this reason".
+
+    It matters because thresholds live in whatever feature space training used. Drive x_flat
+    with raw features when the model saw scaled ones and the design runs at chance while looking
+    entirely healthy.
+    """
+    ck = fixtures.make('tiny')
+    n_features = ck['thermometer']['thresholds'].shape[0]
+    ck['scaler'] = {'mean': [0.5] * n_features, 'scale': [2.0] * n_features}
+
+    out = normalize(ck)
+    assert out['scaler']['mean'] == [0.5] * n_features
+    assert out['scaler']['scale'] == [2.0] * n_features
+
+
+def test_no_scaler_normalizes_to_none_which_is_itself_a_fact():
+    """None means "training used raw features", which the emitted header states positively."""
+    assert normalize(fixtures.make('tiny'))['scaler'] is None
+
+
+def test_a_live_sklearn_style_scaler_is_accepted():
+    class FakeStandardScaler:
+        def __init__(self, n):
+            self.mean_ = [1.0] * n
+            self.scale_ = [3.0] * n
+
+    model, therm = fixtures.make_live('tiny')
+    n = fixtures.make('tiny')['thermometer']['thresholds'].shape[0]
+    ck = from_model(model, therm, scaler=FakeStandardScaler(n))
+    assert ck['scaler']['scale'] == [3.0] * n
+
+
+def test_a_scaler_of_the_wrong_length_is_refused():
+    """A per-feature vector that does not match the feature count would be applied off-by-one
+    across the whole input, which is silent and catastrophic."""
+    ck = fixtures.make('tiny')
+    ck['scaler'] = {'mean': [0.0] * 99, 'scale': [1.0] * 99}
+    with pytest.raises(CheckpointError, match='but the model has'):
+        normalize(ck)
+
+
+def test_an_unrecognized_scaler_is_flagged_rather_than_ignored():
+    """Refusing outright would reject a checkpoint over something the hardware does not depend
+    on; ignoring it silently is the defect this fixes. So: recorded, and warned about."""
+    ck = fixtures.make('tiny')
+    ck['scaler'] = 'some pickled thing'
+    assert normalize(ck)['scaler'] == {'unrecognized': 'str'}
+
+
+# ---------------------------------------------------------------------------------------
 # THE error. Roadmap Q8.
 # ---------------------------------------------------------------------------------------
 

@@ -160,6 +160,36 @@ def test_build_accepts_a_path_as_well_as_a_dict(tmp_path):
     assert from_path.comparators == from_dict.comparators
 
 
+def test_a_scaled_model_emits_its_scaling_parameters(tmp_path):
+    """Telling a user "apply your scaler" while withholding its parameters is not a warning,
+    it is a riddle. The numbers are written out, and the encoder header points at them."""
+    import json
+    ck = fixtures.make('tiny')
+    n = ck['thermometer']['thresholds'].shape[0]
+    ck['scaler'] = {'mean': [0.25] * n, 'scale': [4.0] * n}
+
+    r = build(ck, str(tmp_path / 'rtl'), input_bits=8)
+
+    path = os.path.join(r.outdir, 'input_scaling.json')
+    assert os.path.exists(path)
+    data = json.load(open(path))
+    assert data['mean'] == [0.25] * n and data['scale'] == [4.0] * n
+    assert data['frac_bits'] == 8, 'the scaling is only usable alongside the word format'
+
+    assert any('SCALED features' in w for w in r.warnings)
+    enc = open(os.path.join(r.outdir, 'thermometer_encoder.v')).read()
+    assert 'input_scaling.json' in enc
+
+
+def test_an_unscaled_model_says_so_positively(tmp_path):
+    """Absence of a scaler is a fact worth stating, not a silence to be interpreted."""
+    r = build(fixtures.make('tiny'), str(tmp_path / 'rtl'), input_bits=8)
+    assert not os.path.exists(os.path.join(r.outdir, 'input_scaling.json'))
+    assert not any('SCALED' in w for w in r.warnings)
+    enc = open(os.path.join(r.outdir, 'thermometer_encoder.v')).read()
+    assert 'records no scaler' in enc
+
+
 def test_report_is_ascii(tmp_path):
     """CLAUDE.md: stdout must be ASCII. cp1252 consoles raise on anything else, turning a
     successful build into a traceback."""
