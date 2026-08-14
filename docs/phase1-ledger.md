@@ -471,3 +471,81 @@ broken. Deliberately ignored, with a test.
 
 **Suite: 172 passed. `pytest -m sim`: 23 passed.**
 
+---
+
+## 6. Validated against REAL checkpoints — and it found a defect
+
+Phase 1 was marked closed before this; it was reopened because the phase 1 report listed *"never
+verified against a real checkpoint"* as the top thing phase 2 inherits, and the study repo turned
+out to be sitting on the same machine at `Coding-Projects/dwn-fpga`. No upload, no export.
+
+### Every study checkpoint builds and passes
+
+**9 of 9, both levels, unmodified.** The study format loads with no conversion step, which is the
+whole reason `checkpoint.py` sniffs rather than insisting on one format.
+
+```
+checkpoint                                shape                  nodes   cmp   gate
+dwn_jsc_t200_distributive_50_l_b100       16f/5c/[50] z=200         50   202   core:PASS top:PASS
+dwn_jsc_t4_distributive_300-100_lr        16f/5c/[300,100] z=4     400    64   core:PASS top:PASS
+dwn_jsc_t8_distributive_300-100_lr_b32    16f/5c/[300,100] z=8     400   125   core:PASS top:PASS
+dwn_jsc_t8_distributive_300-100_lr        16f/5c/[300,100] z=8     400   124   core:PASS top:PASS
+mnist_n6_z3_distributive_w300             784f/10c/[300] z=3       300   720   core:PASS top:PASS
+n6_z100_distributive_w2400                16f/5c/[2400] z=100     2400  1348   core:PASS top:PASS
+n6_z200_distributive_w1600                16f/5c/[1600] z=200     1600  1986   core:PASS top:PASS
+n6_z200_distributive_w2000                16f/5c/[2000] z=200     2000  2145   core:PASS top:PASS
+n6_z50_distributive_w3000                 16f/5c/[3000] z=50      3000   763   core:PASS top:PASS
+```
+
+MNIST verifies in 3.4 s and JSC in 1.4 s, so real designs are cheap enough for CI.
+
+### ✅ Nine independently-recorded numbers reproduced exactly
+
+The two checkpoints in `COPY-ME.md`'s verification table let the tool be checked against values
+measured by a *separate implementation*, months earlier. Every one matches:
+
+| | study repo recorded | dwn2rtl derived |
+|---|---|---|
+| JSC precision, no `--input-bits` | Q3.12 signed, 16-bit | **Q3.12 signed (16-bit)** |
+| JSC comparators / nodes | 202 / 50 | **202 / 50** |
+| JSC merge at Q3.12 | 139 of 3,200 | **139 of 3,200** |
+| JSC top vectors | 533 | **533** |
+| MNIST precision at `--input-bits 8` | Q0.8 signed, 9-bit | **Q0.8 signed (9-bit)** |
+| MNIST comparators | 720 of 2,352 | **720 of 2,352** |
+| MNIST merge at Q0.8 | 1,169 of 2,352 | **1,169 of 2,352** |
+| MNIST top vectors | 1,227 | **1,227** |
+| MNIST `1x300` file size (roadmap P8) | 17 MB | **17 MB** |
+
+Nothing was tuned to match. The precision policy in particular derives its answer from the
+thresholds alone and independently lands on both datasets' known formats.
+
+### ⚠️ Hit: the scaler was silently dropped, and the emitted RTL said otherwise
+
+**The defect only a real checkpoint could have exposed.** JSC's checkpoint carries
+`scaler: {mean, scale}` — a fitted StandardScaler — and `normalize()` discarded it. The synthetic
+fixtures have no scaler, so nothing had ever noticed.
+
+Why it matters is in the emitted encoder's own header: thresholds live in whatever feature space
+training used, so driving `x_flat` with raw features when the model saw scaled ones *"produces a
+design that runs at chance and looks entirely healthy doing it."* Every JSC design this tool
+emitted was in exactly that trap.
+
+Worse, that same header ended: **"The checkpoint carries the scaler for this reason."** True of
+the checkpoint, false of what dwn2rtl emitted. A user following the instruction would have found
+nothing to follow it with.
+
+**Fixed in three places, because a warning without the numbers is a riddle:**
+
+1. `checkpoint.py` preserves the scaler, accepts a live sklearn-style object or a `{mean, scale}`
+   dict, and **refuses a per-feature vector whose length does not match the feature count** — an
+   off-by-one there would be applied across the whole input, silently.
+2. `build()` writes **`input_scaling.json`** with the mean, the scale, *and the word format they
+   must be quantized into*, then warns.
+3. The emitted header now points at that file, or states positively that the checkpoint records
+   no scaler. Absence is a fact, not a silence to be interpreted.
+
+An unrecognized scaler is recorded and warned about rather than ignored or refused — refusing
+would reject a checkpoint over something the hardware does not depend on.
+
+**Suite: 179 passed. `pytest -m sim`: 23 passed. Real checkpoints: 9/9 PASS.**
+

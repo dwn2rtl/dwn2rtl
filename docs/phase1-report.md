@@ -157,16 +157,46 @@ The remaining work is packaging, not generation.
 - **README and a worked example** — phase 3. The README is still 10 bytes.
 - **`verify.py` supports only iverilog.** Verilator would be a second backend behind the same
   `Simulator` interface; nothing in the design assumes there is only one.
-- **Never verified against a REAL checkpoint.** Everything here is synthetic by necessity. The
-  study repo's own checkpoints are the obvious first real input, and `checkpoint.py` accepts
-  their format specifically so that is a one-command test.
+- ~~**Never verified against a REAL checkpoint.**~~ ✅ **Done before the phase closed** — see §8.
+  9 of 9 study-repo checkpoints build and pass, and doing it found a defect.
 
 ## 7. By the numbers
 
 | | |
 |---|---|
-| tests | 172 passing, **23 of them the gate**, 0 xfail |
-| gate coverage | 5 shapes x 2 levels, 504–519 vectors each |
+| tests | 179 passing, **23 of them the gate**, 0 xfail |
+| gate coverage | 5 synthetic shapes + **9 real checkpoints**, both levels |
 | roadmap items closed | **Q8, V3, V1, V2**; Q6 advanced |
-| lines added | ~1,900, about a third of it tests |
+| lines added | ~2,100, about a third of it tests |
 | Verilog emitted and verified | encoder, core, top — all three |
+
+## 8. Validation against real checkpoints
+
+The study repo was on the same machine, so this happened before the phase closed rather than
+after. **All 9 of its checkpoints build and pass both gate levels, unmodified** — no conversion
+step, which is the point of sniffing the format rather than insisting on one. They span 50 to
+3,000 nodes, one and two layers, 5 and 10 classes, 16 and 784 features. MNIST verifies in 3.4 s,
+so real designs are cheap enough for CI.
+
+**Nine numbers recorded by a separate implementation, months earlier, reproduced exactly:** both
+datasets' fixed-point formats (Q3.12/16-bit and Q0.8/9-bit), both comparator counts (202 and
+720), both quantisation-merge counts (139 of 3,200 and 1,169 of 2,352), both top-level vector
+counts, and the 17 MB checkpoint size roadmap P8 predicted. Nothing was tuned to match; the
+precision policy derives its answer from thresholds alone.
+
+### And it found a defect the synthetic fixtures never could
+
+JSC's checkpoint carries a fitted `StandardScaler`, and `normalize()` **silently discarded it**.
+The fixtures have no scaler, so nothing had noticed. Per the emitted encoder's own header,
+driving `x_flat` with raw features when the model saw scaled ones *"produces a design that runs
+at chance and looks entirely healthy doing it"* — so every JSC design the tool emitted was in
+that trap. And that header ended *"The checkpoint carries the scaler for this reason"*: true of
+the checkpoint, false of what was emitted.
+
+Now preserved, length-checked against the feature count, written out as `input_scaling.json`
+with the word format it must be quantized into, and pointed at from the RTL — or, when there is
+no scaler, stated positively.
+
+**The generalisable lesson:** synthetic fixtures test the paths you thought of. This one was
+uniform in a way real data is not — no scaler at all — and a whole category of input contract
+went unexercised. Fixtures and real inputs are not substitutes; the phase needed both.
