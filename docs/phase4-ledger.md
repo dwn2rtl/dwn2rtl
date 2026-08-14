@@ -4,7 +4,7 @@
 in that order, because the reverse is how the study repo's area model came to filter zero
 configurations across two complete studies.
 
-**Status: IN PROGRESS.** Unit 8 tier 1 is built. Units 1-7 not started.
+**Status: CLOSED.** Retrospective in `phase4-report.md`.
 
 > Conventions in `overview.md` §6. Entries oldest first, recording *built* / *hit* / *decided*.
 > Reversed decisions stay, struck through, with the reason.
@@ -47,7 +47,7 @@ What is left is small, structural, and identified. This phase does those, and st
 | 5 | **balanced `popcount` tree** | the one clearly-identified structural defect. See below |
 | 6 | **narrow the encoder pipeline register** | `pipe_reg #(.WIDTH(2352))` when 720 bits are driven |
 | 7 | **mark `tool-handoff.md` and `tool-roadmap.md` historical** | they describe starting a project that is now built; a new reader meets three plans and cannot tell which is current |
-| 8 | **`--data`** | the last designed-but-unbuilt piece of the command surface. See below |
+| ~~8~~ | ~~**`--data`**~~ | tier 1 built; **tier 2 deferred** -- inferring from the thresholds removed most of its value. See the closing note |
 
 **Not in this phase:** PyPI publishing, Verilator as a second backend. Both are real, neither is
 optimization, and mixing them in would blur what this phase is for.
@@ -618,3 +618,31 @@ numbers are worth: **`dwn_core` 110 against Vivado's 110 exactly, `thermometer_e
 against 1519**. The tool now answers "will this fit?" and says which half of the answer to trust.
 
 **Status: units 1-6 done or cancelled; 7 done; 8 tier 1 done, tier 2 (`--data`) open.**
+
+## 10. Deferred — `--data` (unit 8, tier 2)
+
+**Not built, and the reason is a result rather than a shortage of time.**
+
+`--data` was planned to point the tool at a sample of real input so it could work out the feature
+word width. It was proposed while the roadmap's claim still stood that precision *cannot* be
+derived from a checkpoint. §1 measured that claim and found it false for quantised inputs: tier 1
+reads the grid off the thresholds, and MNIST gets a 9-bit word with no flags at all.
+
+That leaves `--data` covering one narrow case — thresholds smoothed by an interpolating quantile
+method while the underlying data is still on a grid — plus a second, riskier half for continuous
+inputs, where nothing can be *inferred* and all it could do is measure encoder bit-error at
+candidate widths.
+
+Three reasons to leave it:
+
+1. **Most of its value moved into tier 1**, which needs no flag and no data file.
+2. **The measuring half carries a known scar.** `docs/jsc/report.md` §5.6 *(study repo)*: a width
+   fitted and validated on the same 1,000 samples put 8 of 15 features too narrow. Building that
+   safely needs a held-out split and careful labelling, which is real work for a feature nobody
+   has yet asked for.
+3. ⚠️ **It cannot be tested.** There is no checkpoint on hand whose thresholds are off-grid while
+   its data is quantised, so tier 2 could be written but not verified — and this phase spent its
+   whole length demonstrating what unverified plausible changes are worth.
+
+**When to build it:** when a real user turns up whose thresholds infer nothing. That is also the
+moment there is finally a case to test against.

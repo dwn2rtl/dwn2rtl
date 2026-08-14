@@ -238,7 +238,7 @@ reasoning, and writing only the ledger makes anyone catching up read a diary.
 | **1** | **close the loop** — `checkpoint.py`, synthetic fixtures, `build()`, `dwn_top_tb.v`, `verify.py`, and **the gate green on both levels** | ✅ closed |
 | **2** | **make it a tool** — `conftest.py`, CI on Linux and Windows, every commit | ✅ closed |
 | **3** | **make it usable by someone else** — README, a worked example, the LICENCE, the upstream pin, and cleaning study-repo citations out of the shipped `rtl/*.v` | ✅ closed |
-| **4** | **measure, then optimize** — `estimate` via yosys, then changes justified by measurement | 🔨 in progress |
+| **4** | **measure, then optimize** — `estimate` via yosys, then changes justified by measurement | ✅ closed |
 
 **Phase 1 is the milestone.** Everything before it is scaffolding and everything after is
 packaging: a trained DWN goes in and a simulator certifies the Verilog bit-exact against the
@@ -258,9 +258,18 @@ Hence two guards — calibrate against the study's real Vivado figures before ch
 and justify every change **structurally** first, using measurement only to confirm it cost
 nothing.
 
-Done so far: precision is now **inferred from the thresholds' grid**, so `dwn2rtl build model.pt`
+**Outcome: `estimate` shipped, and BOTH candidate optimizations were cancelled by measurement.**
+Narrowing the encoder register would have saved nothing (synthesis already trims below the driven
+bit count) and an explicit popcount tree would have saved nothing (depth already tracks log2 of
+the width). Two measurements instead of two rewrites of shipped RTL.
+
+Also shipped: precision is now **inferred from the thresholds' grid**, so `dwn2rtl build model.pt`
 needs no `--input-bits` for quantised inputs and derives a 9-bit word for MNIST where it used to
 fall back to a wider default.
+
+⚠️ The calibration is the phase's most useful output: yosys lands on Vivado **exactly** for the
+LUT core and **2.1x low** for the encoder, so `estimate` prints that with every report rather than
+letting one number borrow the other's authority.
 
 Details, including the deferred items and the PyPI prerequisites, are in `phase4-ledger.md`.
 
