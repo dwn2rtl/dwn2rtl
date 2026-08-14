@@ -549,3 +549,60 @@ would reject a checkpoint over something the hardware does not depend on.
 
 **Suite: 179 passed. `pytest -m sim`: 23 passed. Real checkpoints: 9/9 PASS.**
 
+---
+
+## 7. Built — the opt-in real-checkpoint tests
+
+§6's validation was a one-off script. This makes it permanent without committing anything:
+`tests/test_real_checkpoints.py` finds the study checkpoints if they are on the machine and
+**skips cleanly when they are not**, so CI is unaffected and nothing large enters git.
+
+Discovery is `DWN2RTL_STUDY=<dir>`, else the sibling `../dwn-fpga`. Absent, every test in the
+file reports `no study checkpoints found -- set DWN2RTL_STUDY=<dir> to point at them` — an
+actionable reason rather than a bare skip.
+
+### ⚠️ Hit: the first sizing was wrong, and a size filter would not have fixed it
+
+Measured build-plus-verify across the nine real designs:
+
+```
+50 nodes      0.9s          1600 nodes   25.1s
+300 nodes     2.9s          2000 nodes   36.5s
+400 nodes     2.3s          2400 nodes   46.1s
+                            3000 nodes   60.6s      TOTAL 186s
+```
+
+Steep in node count, and four large sweep models were 168 s of the 186 s. A node-count ceiling
+looked sufficient — **and it was not.** The study built **77 configurations**; the partial set on
+this machine is already 11 files and **477 MB**. A per-design filter bounds each simulation but
+not the total, so a full local collection would silently turn `pytest` into a half-hour command
+reading hundreds of megabytes.
+
+**So the default tier caps both**: `MAX_DEFAULT_NODES = 1000` per design, and
+`MAX_DEFAULT_CHECKPOINTS = 6` overall. `DWN2RTL_REAL=all` lifts both.
+
+**Reference models are sorted first so the cap can never discard them** — they are the ones with
+independently-known answers, and a cap that silently dropped them would remove the only test in
+the repo that can catch a regression against an external source. That property has its own test.
+
+**Collection must not load anything.** With 77 files, loading each to check its node count would
+read hundreds of megabytes just to decide what to skip. The count cap applies at collection from
+filenames alone; the node budget applies inside each test, after that one checkpoint is loaded.
+
+### `test_recorded_values_still_reproduce` is the point of the file
+
+It pins the nine values from §6 — both fixed-point formats, both comparator counts, both merge
+counts, both vector counts — against numbers produced by a **separate implementation**, months
+earlier, that this code was never fitted to. No synthetic fixture can do this: a fixture has no
+independently-known answer, only the one this code computes.
+
+Also pinned: the scaler survives, `input_scaling.json` is written, and the RTL points at it —
+the §6 defect, now guarded.
+
+```
+$ pytest                       196 passed, 1 skipped (2400 nodes, ~48s, over the cap)  40s
+$ pytest -m real               16 tests
+$ DWN2RTL_REAL=all pytest -m real   22 tests
+$ pytest   # no study repo     6 skipped, with a reason
+```
+
