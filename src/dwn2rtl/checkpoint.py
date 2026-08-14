@@ -43,6 +43,18 @@ import torch
 # The keys a normalized checkpoint always has. `results` and `run_name` are metadata -- they
 # reach the emitted file's header comment and nothing else -- but they are guaranteed present so
 # that consumers can read them without defensive .get() chains at every site.
+# The upstream commit this module's understanding of the format was READ FROM. Not a dependency
+# and not a runtime check -- nothing here imports torch_dwn, and a user's model may well have
+# been trained against a different commit. It is provenance: it says which source the rules in
+# docs/checkpoint-format.md were verified against, so that when upstream changes, what has to be
+# re-read is a known quantity rather than a guess.
+#
+# ⚠️ Do not turn this into a version assertion. The whole reason loading is duck-typed is that a
+# rename upstream should surface as a clear failure here, not as a refusal to load checkpoints
+# that are perfectly fine.
+UPSTREAM_URL = 'https://github.com/alanbacellar/DWN'
+UPSTREAM_COMMIT = '9f887a0b4bd84dabf6d8c9ae35368ab2a7e0e3c0'
+
 REQUIRED_CONFIG = ('n', 'num_classes', 'layers', 'thermometer_bits')
 
 _LAYER_KEY = re.compile(r'(\d+)\.(luts|mapping|mapping\.weights|_LUTLayer__dummy_mapping)$')

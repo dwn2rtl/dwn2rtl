@@ -298,6 +298,37 @@ def test_one_dimensional_thresholds_are_refused():
         normalize(ck)
 
 
+def test_the_upstream_pin_agrees_with_the_documentation():
+    """One pin, in two places that must not drift.
+
+    `docs/checkpoint-format.md` states which upstream commit its rules were verified against;
+    `checkpoint.py` carries the same SHA. If they disagree, one of them is lying about what was
+    actually read -- and the document's whole value is that its claims were checked against a
+    specific source rather than inferred.
+    """
+    import os
+    from dwn2rtl.checkpoint import UPSTREAM_COMMIT, UPSTREAM_URL
+
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    doc = open(os.path.join(root, 'docs', 'checkpoint-format.md'), encoding='utf-8').read()
+
+    assert UPSTREAM_COMMIT in doc, 'the pinned commit is not the one the document verified'
+    assert UPSTREAM_URL in doc
+    assert len(UPSTREAM_COMMIT) == 40, 'pin a full SHA -- short ones are ambiguous over time'
+
+
+def test_the_upstream_pin_is_not_enforced_at_load_time():
+    """Provenance, not a version gate.
+
+    Loading is duck-typed precisely so a user whose model was trained against a different
+    upstream commit is not refused. A rename upstream should surface as a clear failure with a
+    real message, never as "your checkpoint is the wrong version".
+    """
+    ck = fixtures.make('tiny')
+    ck['pinned_commit'] = 'something-else-entirely'
+    assert normalize(ck)['config']['n'] == 2
+
+
 def test_checkpoint_error_is_a_valueerror_not_a_systemexit():
     """A library that kills its caller's process from inside a function they merely imported is
     not usable from a notebook."""

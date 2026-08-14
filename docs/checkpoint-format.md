@@ -1,14 +1,48 @@
 # DWN checkpoint format — what the exporter reads
 
-**Source of truth.** Everything here was read directly from `third_party/DWN` at the pinned commit
-`9f887a0`, not inferred from the paper, from tensor shapes, or from PyTorch convention. That is the
-rule in CLAUDE.md and it exists because getting this wrong produces an exporter that looks correct
-and silently emits wrong wiring (project-brief.md §12, risk #5).
+## The pin
+
+```
+upstream   https://github.com/alanbacellar/DWN
+commit     9f887a0b4bd84dabf6d8c9ae35368ab2a7e0e3c0   ("9f887a0")
+verified   2026-08-13, independently, by this project
+```
+
+**dwn2rtl does not depend on that package** — nothing in it is imported, at build time or ever.
+The pin is what this document's claims are *about*: it names the source that was read, so a
+reader can check it and a maintainer knows what to re-read when upstream moves.
+
+**Source of truth.** Everything below was read directly from the upstream source at that commit,
+not inferred from the paper, from tensor shapes, or from PyTorch convention. Getting it wrong
+produces an exporter that looks correct and silently emits wrong wiring.
 
 Files read: `src/torch_dwn/lut_layer.py`, `src/torch_dwn/mapping.py`, `src/torch_dwn/utils.py`,
 `src/torch_dwn/custom_operators/cuda/efd_cuda_kernel.cu` (forward kernel), `examples/mnist.py`.
 
+### Re-verified independently, 2026-08-13
+
+This project inherited the document from the study repository, and `tool-handoff.md` §9 asks
+that the pin not be taken on trust: *"Pin it here independently — do not assume the study repo's
+pin, and re-read `docs/checkpoint-format.md` against whatever commit this project pins."*
+
+Done. Each load-bearing claim was checked against the source again rather than carried forward:
+
+| § | claim | confirmed |
+|---|---|---|
+| 1 | a table bit is `luts[j][addr] > 0`, **strictly** greater | `STEFunction.forward` is `(x > 0).float()` |
+| 2 | mapping slot `l` is address bit `l` — **LSB first** | `addr \|= (input[mapping[j][l]] > 0) << l` |
+| 3a | learnable wiring is `weights.argmax(dim=0)` | `mapping.py:17` |
+| 3c | `__dummy_mapping` is a decoy, only `arange` reshaped | `lut_layer.py:60` |
+| 4 | `GroupSum` carries `k` and `tau` and has **no parameters** | `utils.py:11-16` |
+
+That last one is why `num_classes` cannot be recovered from a `state_dict` and must come off the
+live module — see `checkpoint.py`.
+
 If the pin ever moves, re-read all of it. Nothing below is safe to carry forward on faith.
+
+> ⚠️ **Upstream's `LUTLayer` forward requires CUDA** — the CPU path raises. That is not a
+> constraint on dwn2rtl, which never runs a model, but it is why the worked example builds its
+> own stand-in classes rather than importing `torch_dwn`.
 
 ---
 
