@@ -211,6 +211,10 @@ at MNIST's shape before any MNIST model existed.
 Ordered so the gate — a simulator printing PASS — comes as early as possible, because until then
 nothing is verified.
 
+**Each phase keeps its own ledger**, `docs/phaseN-ledger.md`, recording what was built, what was
+hit, and what was decided as it happened. Those files are where "why is it like that?" is
+answered.
+
 **Phase 0 — make it runnable.** `pyproject.toml` with `rtl/` as package data and the
 `[project.scripts]` entry point, a venv, `iverilog` installed.
 
