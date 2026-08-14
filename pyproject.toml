@@ -49,4 +49,5 @@ dwn2rtl = ["rtl/*.v", "rtl/tb/*.v"]
 testpaths = ["tests"]
 markers = [
     "sim: needs a Verilog simulator on PATH -- this is the gate (CLAUDE.md)",
+    "real: needs the study repo's checkpoints, far too large to commit. Skips when absent, so CI is unaffected. DWN2RTL_STUDY=<dir> points at them; DWN2RTL_REAL=all lifts the size and count caps",
 ]
