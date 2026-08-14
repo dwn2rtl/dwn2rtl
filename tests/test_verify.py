@@ -49,16 +49,32 @@ def test_an_explicit_path_that_is_not_executable_is_refused():
         find_simulator(iverilog='definitely-not-a-simulator-xyz')
 
 
-def _fake_install(d, name='iverilog.exe', runner='vvp.exe'):
+def _fake_install(d, name='iverilog.exe', runner='vvp.exe', on_path=False):
     """A directory that looks like an install: the two files, and nothing runnable in them.
 
     Deliberately not real executables. find_simulator() locates by os.path.exists, and
     _iverilog_version() is documented to swallow OSError -- so a stub proves both: the search
     finds it, and a file that cannot be run yields an empty version instead of a crash.
+
+    ⚠️ `on_path=True` makes the stub discoverable by shutil.which, WHICH IS NOT THE SAME THING
+    as merely existing, and the difference is per-platform:
+
+        POSIX     the exact name (no .exe) AND the execute bit
+        Windows   any PATHEXT suffix, permissions ignored
+
+    Without it a stub is found by the fallback and is invisible to PATH -- which is precisely
+    how test_path_wins_over_the_fallback passed on Windows and failed on Ubuntu in CI. The test
+    believed it had put a simulator on PATH; on Linux it had put nothing there, so the fallback
+    won by default and the assertion caught a difference that was never being tested.
     """
+    if on_path:
+        suffix = '.exe' if os.name == 'nt' else ''
+        name, runner = f'iverilog{suffix}', f'vvp{suffix}'
     d.mkdir(parents=True, exist_ok=True)
-    (d / name).write_text('not a real simulator')
-    (d / runner).write_text('not a real runner')
+    for filename in (name, runner):
+        path = d / filename
+        path.write_text('not a real simulator')
+        path.chmod(0o755)          # no-op on Windows, required by shutil.which on POSIX
     return d
 
 
@@ -121,8 +137,13 @@ def test_an_unrunnable_binary_yields_an_empty_version_rather_than_raising(
 
 def test_path_wins_over_the_fallback(tmp_path, monkeypatch):
     """Order is load-bearing. Someone with a deliberate simulator on PATH and a stale install in
-    C:\\iverilog\\bin must get the one they chose."""
-    on_path = _fake_install(tmp_path / 'chosen')
+    C:\\iverilog\\bin must get the one they chose.
+
+    `on_path=True` is what makes this test real rather than vacuous -- see _fake_install. Without
+    it, nothing is on PATH under POSIX rules and the fallback wins for the uninteresting reason
+    that it is the only candidate.
+    """
+    on_path = _fake_install(tmp_path / 'chosen', on_path=True)
     fallback = _fake_install(tmp_path / 'stale')
     monkeypatch.setenv('PATH', str(on_path))
     monkeypatch.setattr('dwn2rtl.verify._CANDIDATE_DIRS', [str(fallback)])
