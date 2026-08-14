@@ -7,7 +7,11 @@ name = "dwn2rtl"
 version = "0.1.0.dev0"
 description = "Turn a trained Differentiable Weightless Neural Network into synthesizable Verilog, and prove the Verilog matches the model"
 readme = "README.md"
-requires-python = ">=3.9"
+# >=3.10 because that is torch's own floor (torch 2.13 declares Requires-Python >=3.10), and a
+# floor this project cannot install is not a floor. It said >=3.9 until phase 2, which was a
+# claim rather than a fact: nothing had ever run there, and `tomllib` -- used by the test that
+# keeps this file's version and __init__.py's in step -- is stdlib only from 3.11.
+requires-python = ">=3.10"
 license = { text = "MIT" }
 keywords = ["dwn", "fpga", "verilog", "rtl", "weightless", "neural-network"]
 classifiers = [

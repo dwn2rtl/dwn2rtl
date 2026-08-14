@@ -79,7 +79,12 @@ def _iverilog_version(exe):
     except (OSError, subprocess.SubprocessError):
         return ''
     first = (out.stdout or out.stderr or '').strip().splitlines()
-    return first[0].replace('Icarus Verilog version', '').strip() if first else ''
+    if not first:
+        return ''
+    version = first[0].replace('Icarus Verilog version', '').strip()
+    # Linux packages report "12.0 (stable) ()" -- an empty build-id parenthesis that renders as
+    # a stray "()" in every report line. Windows reports "12.0 (devel) (s20150603-...)".
+    return re.sub(r'\s*\(\s*\)', '', version).strip()
 
 
 def find_simulator(iverilog=None):

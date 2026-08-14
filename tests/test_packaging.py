@@ -35,7 +35,10 @@ def test_version_matches_pyproject():
     test makes them stay equal. A wheel whose metadata says one version and whose code reports
     another is the kind of thing nobody notices until a bug report cites an impossible version.
     """
-    import tomllib
+    # tomllib is stdlib only from 3.11, and the supported floor is 3.10. Skipping is right
+    # here: this test guards two files agreeing with each other, and the answer does not vary
+    # by interpreter -- one version in the matrix checking it is enough.
+    tomllib = pytest.importorskip('tomllib', reason='stdlib from 3.11; checked on newer jobs')
     from pathlib import Path
 
     pyproject = Path(__file__).resolve().parent.parent / 'pyproject.toml'
