@@ -4,7 +4,7 @@
 README is 10 bytes, there is no example, and the emitted RTL still cites documentation that does
 not exist in this repository.
 
-**Status: OPEN.**
+**Status: CLOSED.** Retrospective in `phase3-report.md`.
 
 > Conventions in `overview.md` §6. Entries oldest first, recording *built* / *hit* / *decided*.
 > Reversed decisions stay, struck through, with the reason.
@@ -15,7 +15,7 @@ not exist in this repository.
 |---|---|---|
 | 1 | **a worked example, end to end** | the README should quote real output, so this comes first |
 | 2 | **`README.md`** | the first thing anyone sees, and it currently says nothing. Also where the study repo is cited as evidence |
-| 3 | **`estimate` via yosys** | the last stubbed subcommand |
+| ~~3~~ | ~~**`estimate` via yosys**~~ | ⬅ **deferred to phase 4** — see §5. No light yosys exists on Windows, and writing it untested would put the first unverified claim in the repo |
 | 4 | **clean the study-repo references out of `rtl/*.v`** | the shipped Verilog cites `docs/reference/checkpoint-format.md`, `docs/jsc/dse-plan.md` and `probe-results.md`, none of which exist here, and one comment means the *study repo's* CLAUDE.md |
 | 5 | **pin the upstream DWN commit** | `tool-handoff.md` §9 asks for this explicitly: do not inherit the study repo's pin, re-read `checkpoint-format.md` against whatever this project pins |
 
@@ -88,3 +88,90 @@ checkable, and checked by nothing. A README is the one document every user reads
 nothing else verifies.
 
 **Suite: 206 passed, 1 skipped.**
+
+## 3. Built — the shipped Verilog no longer cites documents that do not exist
+
+⚠️ **These comments are read by users, not by us.** The four primitives are *copied into every
+emitted directory*, so their headers are documentation shipped with the product — and they came
+across from the study repo verbatim.
+
+They cited `docs/reference/checkpoint-format.md`, `docs/jsc/dse-plan.md` and `probe-results.md`,
+none of which exist here, and referred to *"Phase 1"*, *"Phase 2"*, *"brief §9/§10"* and
+*"CLAUDE.md"* meaning the **study repo's** phases and rules. **A reference that resolves nowhere
+is worse than none**: it tells the reader there is an authority to consult, then wastes their
+time looking for it.
+
+Fixed by making each comment self-contained or citing something real:
+
+| was | now |
+|---|---|
+| `n=6 is fixed for Phase 1 bring-up (CLAUDE.md)` | the actual constraint: 2\*\*n entries must fit a 64-bit parameter, above which Verilog **truncates silently**, and one node stops being one LUT6 |
+| `confirmed by the Phase 1a probe, docs/reference/probe-results.md` | "measured on Vivado in the dwn-fpga-study repository" — a citation a reader can follow |
+| `a Phase 2 sweep axis (brief §10)` | "a build parameter, not a property of the model" |
+| `docs/jsc/dse-plan.md, Group A` | the actual finding: 35 trained configurations showed a learned taper is dominated by a plain layer |
+| `docs/reference/checkpoint-format.md §2/§4` | `dwn2rtl docs/checkpoint-format.md §2/§4` — which exists |
+
+The technical content was left alone; only provenance changed. **Gate re-run: 30 passed.**
+
+`test_shipped_verilog_cites_nothing_a_user_cannot_open` now parametrizes over all six shipped
+files, rejects the known-dangling prefixes, and — the part that keeps working — resolves every
+`docs/*.md` a comment cites against the actual filesystem.
+
+## 4. Built — the upstream pin, verified rather than inherited
+
+```
+upstream   https://github.com/alanbacellar/DWN
+commit     9f887a0b4bd84dabf6d8c9ae35368ab2a7e0e3c0
+verified   2026-08-13, independently
+```
+
+`tool-handoff.md` §9 asked for exactly this: *"Pin it here independently — do not assume the
+study repo's pin, and re-read `docs/checkpoint-format.md` against whatever commit this project
+pins."* So each load-bearing claim was re-checked against the source rather than carried forward:
+
+| § | claim | confirmed at |
+|---|---|---|
+| 1 | table bit is `luts[j][addr] > 0`, **strictly** greater | `STEFunction.forward` is `(x > 0).float()` |
+| 2 | slot `l` is address bit `l`, **LSB first** | `addr \|= (input[mapping[j][l]] > 0) << l` |
+| 3a | learnable wiring is `weights.argmax(dim=0)` | `mapping.py:17` |
+| 3c | `__dummy_mapping` is only `arange` reshaped | `lut_layer.py:60` |
+| 4 | `GroupSum` has **no parameters** | `utils.py:11-16` |
+
+That last one is the reason `num_classes` cannot come from a `state_dict` — the design of
+`checkpoint.py` rests on it, and it is now confirmed rather than assumed.
+
+**Decided: the pin is provenance, not a version gate.** `UPSTREAM_COMMIT` lives in
+`checkpoint.py` and a test keeps it identical to the document's. But **loading never checks it**,
+and a test asserts that too: duck-typing exists precisely so a user whose model was trained
+against a different commit is not refused. A rename upstream should surface as a clear failure
+with a real message, never as *"your checkpoint is the wrong version"*.
+
+**Found while verifying: upstream's `LUTLayer` forward requires CUDA** — the CPU path raises.
+Not a constraint on dwn2rtl, which never runs a model, but it independently confirms the
+example's decision not to import `torch_dwn`.
+
+## 5. Decided — `estimate` defers to phase 4
+
+**yosys is not a light dependency on Windows**, and this is measured rather than assumed:
+
+| | |
+|---|---|
+| winget | no package |
+| chocolatey | not installed, and no known package |
+| YosysHQ `yosys` releases | **source tarballs only** — no prebuilt Windows binary |
+| OSS CAD Suite | **703 MB** |
+| `apt install yosys` on Linux | ~9 MB of packages |
+
+Windows is this project's primary target, so the ~9 MB figure is not available to us.
+
+**Deferred rather than written blind.** `estimate` is the only feature the roadmap itself calls
+*optional*, and this project's rule is that nothing counts until it runs. Implementing it now
+would put the first unverified claim in the repository, to save a download that can happen later
+just as easily. It stays a stub exiting 2 and naming its phase — which is the policy `cli.py`
+was built around from phase 0.
+
+**Suite: 214 passed, 1 skipped.**
+
+## Phase 3 — closed
+
+Units 1, 2, 4 and 5 done. Unit 3 (`estimate`) deferred to phase 4, with a reason.
