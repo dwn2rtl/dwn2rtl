@@ -211,9 +211,17 @@ at MNIST's shape before any MNIST model existed.
 Ordered so the gate — a simulator printing PASS — comes as early as possible, because until then
 nothing is verified.
 
-**Each phase keeps its own ledger**, `docs/phaseN-ledger.md`, recording what was built, what was
-hit, and what was decided as it happened. Those files are where "why is it like that?" is
-answered.
+**Each phase produces two documents, and they are not the same document.**
+
+| | `docs/phaseN-ledger.md` | `docs/phaseN-report.md` |
+|---|---|---|
+| when | written *during*, as things happen | written *at the end*, once |
+| shape | dated entries: built / hit / decided | a retrospective |
+| audience | whoever is working, and future-you asking "why is it like that?" | someone who was not there |
+| wrong turns | kept, struck through, with the reason | only where they changed a later decision |
+
+The ledger is the evidence; the report is the argument. Writing only the report loses the
+reasoning, and writing only the ledger makes anyone catching up read a diary.
 
 **Phase 0 — make it runnable.** `pyproject.toml` with `rtl/` as package data and the
 `[project.scripts]` entry point, a venv, `iverilog` installed.

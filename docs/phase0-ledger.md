@@ -164,10 +164,14 @@ files inside .venv/          23,002
 Two real causes behind the appearance, neither of them git tracking anything:
 
 1. **`.gitignore` stops git, not the editor.** 23,002 files were being watched, indexed and
-   searched. Added `.vscode/settings.json` with `files.watcherExclude`, `search.exclude` and a
-   pinned interpreter path. Committed deliberately, so anyone who clones and makes a venv gets a
-   responsive editor without rediscovering why. `.venv` is left *visible* in the explorer — only
-   excluded from watching and searching.
+   searched. A `.vscode/settings.json` was written with `files.watcherExclude`, `search.exclude`
+   and a pinned interpreter path.
+
+   ~~Committed, so anyone who clones and makes a venv gets a responsive editor.~~ ⚠️ **Withdrawn
+   — it was not kept.** Commit `809b456` contains `.gitignore` only, and the file is not in the
+   tree. Editor configuration is therefore **not** version-controlled in this project, and each
+   contributor handles the 23,002-file watch problem in their own editor. Recorded because the
+   symptom will recur on every fresh clone and the cause should not have to be rediagnosed.
 2. **The `.gitignore` fix was uncommitted.** The committed version at `e394093` lists only
    `CLAUDE.md` and `COPY-ME.md`; `.venv/` existed solely in the working tree. Anything reading
    committed state, or a cache from before the edit, would show 23,002 untracked files.
@@ -219,7 +223,9 @@ Replace it if a named holder is wanted.
 |---|---|---|
 | ~~**1**~~ | ~~**`tests/` does not exist** — `pytest` exited 0 with zero tests collected, a green light that meant nothing~~ | ✅ **done**, §7 — 39 passed, 1 xfailed |
 | ~~**2**~~ | ~~**`LICENSE` file** — `pyproject.toml` claimed MIT with no file backing it~~ | ✅ **done**, §8 — roadmap P3 closed |
-| **3** | **Nothing is committed.** Ten changed/untracked paths | ⬅ the only item left |
+| ~~**3**~~ | ~~**Nothing is committed.**~~ | ✅ **done** — four commits, `809b456`..`9aa36ab` |
+
+**Phase 0 is CLOSED.** Retrospective in `phase0-report.md`.
 
 **Explicitly deferred, with reasons, so they are not mistaken for oversights:**
 
