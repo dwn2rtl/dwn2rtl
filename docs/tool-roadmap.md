@@ -392,6 +392,33 @@ Recorded so they are not silently reconsidered:
   nothing about pyramids.
 - **Reorganising the JSC artifacts.** `mnist/plan.md` §1.4 — `docs/jsc/report.md` *(study repo)* and the `jsc-complete`
   tag reference current paths.
+- 🆕 **Running the emitted RTL back through yosys and shipping *that* Verilog.** Measured
+  2026-08-14 and recorded here because it is an obvious-sounding idea that will be suggested
+  again. yosys can indeed `synth; write_verilog`, but on `dwn_core`:
+
+  | | |
+  |---|---|
+  | size | 156 lines -> **523 lines**, 3.6x larger, every wire renamed `_000_` |
+  | LUT nodes come out as | `assign _000_ = 64'h...0007150 >> {_098_, _106_, ...};` |
+  | vendor primitives | **none** — so Vivado re-synthesizes it from scratch anyway |
+  | room to improve | **none**: `dwn_core` measures **110 LUTs against Vivado's 110** |
+
+  ⚠️ **That output line is what `lut_node.v` already is** — a 64-bit constant indexed by a 6-bit
+  address. The tool already emits the optimal form; yosys only removes the names. The core is
+  nothing but trained tables and two reductions, the tables cannot be smaller, and both
+  reductions are already logarithmic (phase 4 ledger §9).
+
+  Three costs against zero benefit: it makes yosys a **hard dependency of `build`** (today it is
+  optional and only for `estimate`, and on Windows it is a 564 MB download); it destroys
+  reviewability, including the emitters' own read-back checks, which parse the emitted text; and
+  it hands the vendor tool pre-flattened anonymous logic instead of structure. On that last
+  point — Vivado maps comparators to carry chains at 7.5 LUTs each where yosys uses 3.5 generic
+  LUTs. That is **two architectures, not one tool being smarter**, and the study found timing
+  rather than area was binding.
+
+  **When it would be legitimate:** targeting a flow that cannot synthesize behavioral Verilog, or
+  ASIC tech-mapping to a specific cell library. Neither is what a vendor-neutral generator ships;
+  see Q6.
 
 ---
 
