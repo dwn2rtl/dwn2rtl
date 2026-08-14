@@ -72,16 +72,20 @@ def test_testbenches_land_in_a_subdirectory(tmp_path):
     assert not any(f.endswith('_tb.v') for f in os.listdir(r.outdir))
 
 
-def test_an_empty_testbench_is_not_copied_and_is_warned_about():
-    """A zero-byte file in tb/ makes the directory LOOK complete while that level's gate
-    silently does nothing. Currently true of dwn_top_tb.v -- see the strict xfail in
-    test_packaging.py, which will force this test's update when it is written."""
-    import tempfile
-    with tempfile.TemporaryDirectory() as d:
-        r = build(fixtures.make('tiny'), os.path.join(d, 'rtl'), input_bits=8)
-        empty = [w for w in r.warnings if 'EMPTY' in w]
-        copied = os.listdir(os.path.join(r.outdir, 'tb'))
-        assert len(empty) + len(copied) == 2, 'every testbench is either copied or warned about'
+def test_every_testbench_is_either_copied_or_warned_about(tmp_path):
+    """A zero-byte file in tb/ would make the directory LOOK complete while that level's gate
+    silently does nothing -- the "green light nobody has reason to distrust" failure.
+
+    Both testbenches are real as of phase 1, so this now asserts both are copied and no warning
+    fires. It stays as an invariant rather than being deleted: the guard is what stops a future
+    empty or truncated testbench shipping unnoticed.
+    """
+    r = build(fixtures.make('tiny'), str(tmp_path / 'rtl'), input_bits=8)
+    empty = [w for w in r.warnings if 'EMPTY' in w]
+    copied = sorted(os.listdir(os.path.join(r.outdir, 'tb')))
+
+    assert len(empty) + len(copied) == 2, 'a testbench was neither copied nor warned about'
+    assert copied == ['dwn_core_tb.v', 'dwn_top_tb.v'] and not empty
 
 
 @pytest.mark.parametrize('shape', ALL_SHAPES)
@@ -273,6 +277,68 @@ def test_gate_core_is_bit_exact(shape, tmp_path):
 
     assert 'PASS (bit-exact on every vector)' in stdout, stdout
     assert 'mismatches     : 0' in stdout, stdout
+
+
+@pytest.mark.sim
+@requires_sim
+@pytest.mark.parametrize('shape', ALL_SHAPES)
+def test_gate_top_is_bit_exact(shape, tmp_path):
+    """GATE 1, top level. Quantized FEATURES through the thermometer encoder and the core.
+
+    This is the half that checks the encoder, which is the part published DWN resource counts
+    leave out and which on the smallest studied model is fourteen times the network it feeds.
+    An unverified encoder is most of an unverified design.
+    """
+    r = build(fixtures.make(shape), str(tmp_path / 'rtl'), input_bits=8)
+    stdout = run_gate(r.outdir, os.path.join('tb', 'dwn_top_tb.v'))
+
+    assert 'PASS (bit-exact on every vector)' in stdout, stdout
+    assert 'mismatches     : 0' in stdout, stdout
+    assert f'vectors tested : {r.vectors["top"]["count"]}' in stdout
+
+
+@pytest.mark.sim
+@requires_sim
+def test_the_two_levels_test_different_things(tmp_path):
+    """The split is what makes a failure localize itself, so the two must not be the same run.
+
+    Different vector counts prove it: the core level drives pre-binarized bits, the top level
+    drives quantized features and gets per-feature threshold edge cases the core cannot have.
+    """
+    r = build(fixtures.make('n6'), str(tmp_path / 'rtl'), input_bits=8)
+    core = run_gate(r.outdir, os.path.join('tb', 'dwn_core_tb.v'))
+    top = run_gate(r.outdir, os.path.join('tb', 'dwn_top_tb.v'))
+
+    assert 'PASS' in core and 'PASS' in top
+    assert r.vectors['core']['count'] != r.vectors['top']['count']
+    assert 'dwn_core vs golden' in core
+    assert 'dwn_top (encoder + core)' in top
+
+
+@pytest.mark.sim
+@requires_sim
+def test_a_broken_encoder_fails_only_the_top_gate(tmp_path):
+    """The localization claim, proved rather than asserted in a comment.
+
+    Corrupt a comparator constant and the core -- which is driven by pre-binarized bits and
+    never sees the encoder -- must still PASS, while the top level FAILS. If both failed, or
+    neither, the two-testbench split would be buying nothing.
+    """
+    r = build(fixtures.make('n6'), str(tmp_path / 'rtl'), input_bits=8)
+    enc = os.path.join(r.outdir, 'thermometer_encoder.v')
+
+    import re
+    src = open(enc).read()
+    # Push one threshold far out of range so that comparator's output flips for every input.
+    broken, count = re.subn(r"> \$signed\(\d+'sd\d+\)", "> $signed(9'sd255)", src, count=1)
+    assert count == 1 and broken != src
+    open(enc, 'w').write(broken)
+
+    assert 'PASS' in run_gate(r.outdir, os.path.join('tb', 'dwn_core_tb.v')), \
+        'a broken encoder must not affect the core gate'
+    top = run_gate(r.outdir, os.path.join('tb', 'dwn_top_tb.v'))
+    assert 'FAIL' in top, f'a broken encoder passed the top gate:\n{top}'
+    assert 'fault is in the thermometer encoder' in top
 
 
 @pytest.mark.sim

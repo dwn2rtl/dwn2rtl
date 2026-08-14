@@ -71,18 +71,17 @@ def test_testbenches_ship_with_the_package():
     assert (tb / 'dwn_top_tb.v').is_file()
 
 
-@pytest.mark.xfail(reason='dwn_top_tb.v is a 0-byte file -- commit 646aebe landed it empty. '
-                          'Half the gate (encoder + core) does not exist. Phase 1.',
-                   strict=True)
-def test_top_testbench_has_content():
-    """A KNOWN GAP, asserted so it cannot be forgotten.
+def test_both_testbenches_have_content():
+    """Neither testbench may be empty.
 
-    strict=True is the point: when phase 1 writes this testbench, the test starts passing, an
-    XPASS becomes a failure, and whoever wrote it is forced to delete this marker. A gap that
-    announces its own resolution beats a TODO nobody greps for.
+    `dwn_top_tb.v` was a 0-byte file from commit 646aebe until phase 1 -- half the gate did not
+    exist. It was held by a strict xfail, which did its job: writing the testbench turned the
+    XPASS into a failure and forced the marker's deletion rather than leaving a stale TODO.
     """
-    tb = files('dwn2rtl') / 'rtl' / 'tb' / 'dwn_top_tb.v'
-    assert 'module' in tb.read_text(encoding='utf-8')
+    tb = files('dwn2rtl') / 'rtl' / 'tb'
+    for name in ('dwn_core_tb.v', 'dwn_top_tb.v'):
+        text = (tb / name).read_text(encoding='utf-8')
+        assert 'module' in text and '$readmemh' in text, f'{name} is not a real testbench'
 
 
 # --------------------------------------------------------------------------------------
