@@ -82,9 +82,13 @@ class Thermometer:
 def make_a_model(n_features=16, z=8, width=60, n_classes=5, n=6):
     """A DWN with `n_features` inputs, `z` thermometer bits each, one LUT layer, `n_classes`
     classes. Untrained -- see the module docstring."""
-    thresholds = torch.from_numpy(
-        np.sort(np.random.default_rng(0).uniform(-1, 1, (n_features, z)), axis=1)
-        .astype(np.float32))
+    # Thresholds on the k/255 grid, because a thermometer's thresholds are QUANTILES OF THE
+    # TRAINING DATA -- so a model trained on 8-bit inputs (images, most sensors) has thresholds
+    # that are themselves 8-bit values. That is not decoration here: it is what lets dwn2rtl
+    # work out the feature word width by itself, with no flag. See step 2.
+    rng = np.random.default_rng(0)
+    k = rng.integers(0, 256, (n_features, z))
+    thresholds = torch.from_numpy((np.sort(k, axis=1) / 255).astype(np.float32))
 
     model = torch.nn.Sequential(
         LUTLayer(n_features * z, width, n=n),
@@ -114,11 +118,14 @@ def main(outdir=None):
     print(f'   {checkpoint}  ({os.path.getsize(checkpoint) / 1024:.0f} KB)\n')
 
     print('2. emit Verilog ------------------------------------------------------------')
-    # --input-bits is the INPUT's precision, not the model's. It is the one thing a checkpoint
-    # cannot tell you, and the one thing you always know. 8 here means "my features arrive as
-    # 8-bit values scaled into [0,1]", as image pixels do -- for which the quantisation is
-    # provably lossless rather than merely measured.
-    report = dwn2rtl.build(checkpoint, rtl, input_bits=8)
+    # NO FLAGS. The feature word width is worked out from the model: the thresholds sit on the
+    # k/255 grid, so the training data was 8-bit, so frac=8 is PROVABLY lossless -- there is
+    # nothing between adjacent representable inputs to lose. Watch the report say `INFERRED`.
+    #
+    # Pass input_bits=N to state it yourself, if your deployment differs from your training
+    # data or the grid is not detectable. A genuinely continuous input (standard-scaled tabular
+    # features, say) has no grid, and then the tool takes a documented default and says so.
+    report = dwn2rtl.build(checkpoint, rtl)
     for line in report.lines():
         print('   ' + line)
     print()
@@ -162,7 +169,7 @@ def for_a_real_model():
 
     then, in a terminal:
 
-        dwn2rtl build model.pt --out rtl/ --input-bits 8
+        dwn2rtl build model.pt --out rtl/
         dwn2rtl verify rtl/
 
     ⚠️ If your training scaled its features -- a StandardScaler, say -- pass the scaler too:

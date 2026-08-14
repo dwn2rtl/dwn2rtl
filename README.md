@@ -9,14 +9,14 @@ pip install git+https://github.com/Krithik4/dwn2rtl.git
 ```
 
 ```bash
-dwn2rtl build model.pt --out rtl/ --input-bits 8
+dwn2rtl build model.pt --out rtl/
 dwn2rtl verify rtl/
 ```
 
 ```
 features 784, classes 10, layers [300], n=6, z=3   from checkpoint
 integer bits 0                                     derived, exact
-frac bits 8 -> Q0.8 signed (9-bit)                 from --input-bits, provably lossless
+frac bits 8 -> Q0.8 signed (9-bit)                 INFERRED from the thresholds' grid, provably lossless
 
 core      300 nodes, 3 cycles
 encoder   720 comparators of 2352 thermometer bits
@@ -108,21 +108,40 @@ accepts the plain dict above, a live model via `dwn2rtl.from_model(model, thermo
 `dwn2rtl.save(model, thermometer, path)` — which validates while the objects are still in memory,
 so a mistake surfaces then rather than on another machine weeks later.
 
-## `--input-bits`, and the question the tool refuses to ask
+## Precision, and the question the tool refuses to ask
 
-Almost everything is derived from the checkpoint: features, classes, layers, `n`, `z`, the wiring,
-the table contents, and the **integer** width — which follows exactly from the thresholds.
+Everything structural is derived from the checkpoint: features, classes, layers, `n`, `z`, the
+wiring, the table contents, and the **integer** width — which follows exactly from the thresholds.
 
-Exactly one thing cannot be: how many **fractional** bits are safe. That depends on whether
-quantisation changes predictions, which depends on your data. So the tool never asks for
-fractional bits. It asks `--input-bits`: *the precision of your input*, which you know.
+The one genuinely hard part is how many **fractional** bits to use. It cannot be answered from a
+checkpoint in general, because whether quantisation changes a prediction depends on your data. So
+the tool never asks *"how much precision do you need?"* — an unanswerable question. It works out
+*how much precision your input already has*, in three tiers:
 
-When your input has a native quantum — 8-bit pixels, most ADCs, anything already digital —
-`frac = input_bits` is **provably** lossless, not merely measured. Pixels are `k/255`, and
-quantising at `frac=8` computes `floor(k·256/255)`, strictly increasing over `k = 0…255`. Order
-is preserved exactly, and every encoder bit is an order comparison, so no bit can change.
+**1. Inferred, automatically — no flag.** A thermometer's thresholds are **quantiles of the
+training data**, so if that data was quantised, they sit on the same grid. `dwn2rtl` looks for
+that grid. On MNIST it finds `k/255` and derives a 9-bit word instead of a 16-bit default, with
+nothing typed.
 
-Omit it and you get a documented default that is reported as **a default, not a measurement**.
+**2. `--input-bits N`, to state or override it.** Useful when your deployment differs from your
+training data, or the grid isn't detectable.
+
+**3. A documented default**, when there's no grid to find — genuinely continuous inputs like
+standard-scaled tabular features. Reported as **a default, not a measurement**.
+
+The report always says which happened:
+
+```
+frac bits 8 -> Q0.8 signed (9-bit)      INFERRED from the thresholds' grid, provably lossless
+frac bits 8 -> Q0.8 signed (9-bit)      from --input-bits, provably lossless
+frac bits 12 -> Q3.12 signed (16-bit)   DEFAULT for a continuous input, NOT measured
+```
+
+**"Provably lossless" is meant literally.** With an 8-bit input, values are `k/255`, and
+quantising at `frac=8` computes `floor(k·256/255)` — strictly increasing over `k = 0…255`. Order
+is preserved exactly, every encoder bit is an order comparison, so no bit can change. Not
+"measured to be fine": it cannot differ. The study measured 0 divergences across 10,000 MNIST
+samples, which is what a proof predicts.
 
 ## What `build` emits
 
