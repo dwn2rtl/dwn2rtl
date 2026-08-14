@@ -43,6 +43,8 @@ _LAZY = {
     'from_model': 'checkpoint',
     'normalize': 'checkpoint',
     'CheckpointError': 'checkpoint',
+    'build': 'build',
+    'BuildReport': 'build',
 }
 
 
@@ -63,9 +65,11 @@ def __dir__():
 __all__ = [
     '__version__',
     'BuildConfig',
+    'BuildReport',
     'CheckpointError',
     'Pipeline',
     'Precision',
+    'build',
     'from_model',
     'load',
     'normalize',

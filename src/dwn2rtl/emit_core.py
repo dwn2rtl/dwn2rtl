@@ -263,6 +263,13 @@ def build_core(ck, outdir, pipeline=None):
 
     return {
         'path': out_path,
+        # The extracted (tables, wiring, kind) per layer, handed back rather than re-derived by
+        # the caller. vectors.generate() labels its vectors with these SAME arrays, so the
+        # testbench and the RTL cannot be built from different readings of the checkpoint --
+        # which is the one invariant in CLAUDE.md that turns a green testbench into a lie.
+        # Re-extracting would be deterministic and would almost always agree; "almost" is the
+        # problem.
+        'layers_extracted': layers,
         'nodes': total,
         'nodes_checked': seen,
         'layers': len(layers),

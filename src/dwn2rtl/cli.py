@@ -41,9 +41,25 @@ def _not_yet(name, phase, what):
 
 
 def cmd_build(args):
-    return _not_yet(
-        'build', 1,
-        'needs checkpoint.py, then build() wiring emit_core -> emit_encoder -> vectors.')
+    # Imported here, not at module scope: build pulls in checkpoint.py and therefore torch, and
+    # `dwn2rtl verify` must not pay for that. See __init__.py.
+    from .build import build
+    from .checkpoint import CheckpointError
+
+    try:
+        report = build(args.checkpoint, args.out, input_bits=args.input_bits)
+    except CheckpointError as e:
+        # These messages are the contract -- they name the missing object and show the fix.
+        # Wrapping them in a traceback buries the part the user needs.
+        print(f'dwn2rtl build: {e}', file=sys.stderr)
+        return 1
+    except FileNotFoundError as e:
+        print(f'dwn2rtl build: {e}', file=sys.stderr)
+        return 1
+
+    for line in report.lines():
+        print(line)
+    return 0
 
 
 def cmd_verify(args):
