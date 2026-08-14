@@ -16,14 +16,9 @@ from dwn2rtl.build import build
 from dwn2rtl.verify import (LEVELS, SimulatorNotFound, VerifyReport, find_simulator, verify)
 
 
-def _sim():
-    try:
-        return find_simulator()
-    except SimulatorNotFound:
-        return None
-
-
-requires_sim = pytest.mark.skipif(_sim() is None, reason='no Verilog simulator available')
+# Discovery and the skip both live in conftest.py now -- three test files had each grown a
+# copy by the end of phase 1.
+from conftest import SIMULATOR as _SIM
 
 
 @pytest.fixture
@@ -35,19 +30,18 @@ def built(tmp_path):
 # Finding the simulator -- half the job, and not a theoretical concern
 # ---------------------------------------------------------------------------------------
 
-@requires_sim
-def test_find_simulator_returns_something_runnable():
-    sim = find_simulator()
-    assert os.path.exists(sim.compiler)
-    assert os.path.exists(sim.runner)
-    assert sim.name == 'iverilog'
+def test_find_simulator_returns_something_runnable(simulator):
+    # Takes the conftest `simulator` fixture rather than calling find_simulator() directly:
+    # without one, this should SKIP, not raise SimulatorNotFound and read as a real failure.
+    assert os.path.exists(simulator.compiler)
+    assert os.path.exists(simulator.runner)
+    assert simulator.name == 'iverilog'
 
 
-@requires_sim
-def test_version_is_detected_despite_iverilog_exiting_nonzero():
+def test_version_is_detected_despite_iverilog_exiting_nonzero(simulator):
     """`iverilog -V` exits 255. Checking its return code would report a perfectly good
     simulator as broken -- measured in phase 0."""
-    assert re.search(r'\d+\.\d+', find_simulator().version)
+    assert re.search(r'\d+\.\d+', simulator.version)
 
 
 def test_an_explicit_path_that_is_not_executable_is_refused():
@@ -68,7 +62,6 @@ def test_not_found_error_lists_what_was_searched_and_how_to_install():
 # The gate, through verify()
 # ---------------------------------------------------------------------------------------
 
-@requires_sim
 @pytest.mark.sim
 def test_verify_passes_a_good_build(built):
     r = verify(built)
@@ -79,7 +72,6 @@ def test_verify_passes_a_good_build(built):
     assert 'RESULT   PASS' in '\n'.join(r.lines())
 
 
-@requires_sim
 @pytest.mark.sim
 def test_verify_fails_a_corrupted_core(built):
     core = os.path.join(built, 'dwn_core.v')
@@ -93,7 +85,6 @@ def test_verify_fails_a_corrupted_core(built):
     assert any(lv.status == 'FAIL' and lv.mismatches > 0 for lv in r.levels)
 
 
-@requires_sim
 @pytest.mark.sim
 def test_a_broken_encoder_is_localized_in_the_report(built):
     """The two-level split only pays off if the tool SAYS which half failed at the moment it
@@ -111,7 +102,6 @@ def test_a_broken_encoder_is_localized_in_the_report(built):
     assert 'fault is in the thermometer encoder' in '\n'.join(r.lines())
 
 
-@requires_sim
 @pytest.mark.sim
 def test_a_compile_error_is_an_error_not_a_pass(built):
     open(os.path.join(built, 'dwn_core.v'), 'a').write('\nthis is not verilog\n')
@@ -124,7 +114,6 @@ def test_a_compile_error_is_an_error_not_a_pass(built):
 # Not checking is not passing
 # ---------------------------------------------------------------------------------------
 
-@requires_sim
 @pytest.mark.sim
 @pytest.mark.parametrize('level', sorted(LEVELS))
 def test_a_missing_testbench_is_reported_missing_and_fails(built, level):
@@ -137,7 +126,6 @@ def test_a_missing_testbench_is_reported_missing_and_fails(built, level):
     assert not r.ok
 
 
-@requires_sim
 @pytest.mark.sim
 def test_an_empty_testbench_is_reported_missing(built):
     """A 0-byte testbench compiles fine and checks nothing. That is precisely how dwn_top_tb.v
@@ -150,7 +138,6 @@ def test_an_empty_testbench_is_reported_missing(built):
     assert not r.ok
 
 
-@requires_sim
 @pytest.mark.sim
 def test_missing_vectors_are_reported_before_the_simulator_runs(built):
     """Without vectors, $readmemh warns and the testbench compares against x -- a failure whose
@@ -179,6 +166,62 @@ def test_an_empty_report_is_not_a_pass():
 
 
 # ---------------------------------------------------------------------------------------
+# The skip guard itself -- because a silently absent gate looks exactly like a green one
+# ---------------------------------------------------------------------------------------
+
+def test_missing_simulator_skips_gate_tests_loudly(monkeypatch):
+    """conftest skips `sim`-marked tests when there is no simulator. That is necessary and it
+    is also the one hook that could hide the project's only correctness signal, so the two
+    halves are asserted: the tests are skipped, and the reason says the gate did not run.
+
+    Tested by patching rather than by hiding the binary: stripping PATH does not work, because
+    verify.py deliberately falls back to C:\\iverilog\\bin and finds it anyway -- which is the
+    phase 0 finding working as intended.
+    """
+    import conftest
+
+    monkeypatch.setattr(conftest, 'SIMULATOR', None)
+
+    header = conftest.pytest_report_header(None)
+    assert any('NO SIMULATOR' in line for line in header)
+    assert any('SKIPPED, not passed' in line for line in header)
+
+    class FakeItem:
+        def __init__(self, keywords):
+            self.keywords = keywords
+            self.markers = []
+
+        def add_marker(self, m):
+            self.markers.append(m)
+
+    gate, plain = FakeItem({'sim': True}), FakeItem({})
+    conftest.pytest_collection_modifyitems(None, [gate, plain])
+
+    assert gate.markers, 'a gate test was not skipped without a simulator'
+    assert 'THE GATE DID NOT RUN' in gate.markers[0].kwargs['reason']
+    assert not plain.markers, 'a non-gate test was skipped for no reason'
+
+
+def test_present_simulator_skips_nothing(monkeypatch):
+    import conftest
+    from dwn2rtl.verify import Simulator
+
+    monkeypatch.setattr(conftest, 'SIMULATOR', Simulator('iverilog', 'x', 'y', '12.0'))
+
+    class FakeItem:
+        keywords = {'sim': True}
+        markers = []
+
+        def add_marker(self, m):
+            self.markers.append(m)
+
+    item = FakeItem()
+    conftest.pytest_collection_modifyitems(None, [item])
+    assert not item.markers
+    assert 'gate simulator' in conftest.pytest_report_header(None)[0]
+
+
+# ---------------------------------------------------------------------------------------
 # Refusing to run at all
 # ---------------------------------------------------------------------------------------
 
@@ -199,7 +242,6 @@ def test_verify_refuses_a_path_that_is_not_a_directory(tmp_path):
 # CLI
 # ---------------------------------------------------------------------------------------
 
-@requires_sim
 @pytest.mark.sim
 def test_cli_verify_exits_zero_on_pass_and_one_on_fail(built, capsys):
     """The exit code is what a CI job branches on, so it is asserted separately from the text."""
@@ -223,7 +265,6 @@ def test_cli_verify_of_a_non_build_exits_one(tmp_path, capsys):
     assert 'dwn2rtl build' in capsys.readouterr().err
 
 
-@requires_sim
 @pytest.mark.sim
 def test_verify_report_is_ascii(built):
     """CLAUDE.md: cp1252 consoles raise on anything else."""

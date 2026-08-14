@@ -38,7 +38,7 @@ import pytest
 
 from dwn2rtl.build import build
 from dwn2rtl.checkpoint import load
-from dwn2rtl.verify import SimulatorNotFound, find_simulator, verify
+from dwn2rtl.verify import verify
 
 
 # A design bigger than this is a sweep point, not a smoke test. 1,000 nodes was ~13 s of
@@ -131,13 +131,7 @@ requires_real = pytest.mark.skipif(
     not REAL,
     reason='no study checkpoints found -- set DWN2RTL_STUDY=<dir> to point at them')
 
-try:
-    find_simulator()
-    _HAVE_SIM = True
-except SimulatorNotFound:
-    _HAVE_SIM = False
-
-requires_sim = pytest.mark.skipif(not _HAVE_SIM, reason='no Verilog simulator available')
+# The `sim` marker is enough -- conftest.py skips those when there is no simulator.
 
 
 def _input_bits_for(stem):
@@ -188,7 +182,6 @@ def test_real_checkpoint_loads_unmodified(path):
 @pytest.mark.real
 @pytest.mark.sim
 @requires_real
-@requires_sim
 @pytest.mark.parametrize('path', REAL, ids=_stem)
 def test_real_checkpoint_builds_and_passes_the_gate(path, tmp_path):
     """A real trained model, all the way to a simulator saying bit-exact."""

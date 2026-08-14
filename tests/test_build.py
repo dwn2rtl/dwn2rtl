@@ -22,22 +22,11 @@ from dwn2rtl.build import PRIMITIVES, build
 ALL_SHAPES = sorted(fixtures.SHAPES)
 
 
-def _simulator():
-    """Simulator discovery lives in verify.py and nowhere else.
-
-    This file briefly carried its own copy, written before verify.py existed so the gate did not
-    have to wait for it. That copy is now deleted -- two implementations of "where is iverilog"
-    would drift, and the one users actually hit is verify.py's.
-    """
-    from dwn2rtl.verify import SimulatorNotFound, find_simulator
-    try:
-        return find_simulator()
-    except SimulatorNotFound:
-        return None
-
-
-requires_sim = pytest.mark.skipif(_simulator() is None,
-                                  reason='no Verilog simulator on PATH or in a known location')
+# Simulator discovery lives in verify.py, and the skip is applied centrally by conftest.py to
+# anything marked `sim`. This file briefly carried its own copy of both, written before
+# verify.py existed so the gate did not have to wait for it; three files had grown one by the
+# end of phase 1.
+from conftest import SIMULATOR
 
 
 # ---------------------------------------------------------------------------------------
@@ -274,7 +263,7 @@ def run_gate(outdir, testbench):
     cwd matters: the testbench does $readmemh("x_quant.hex") and `include "top_params.vh",
     both resolved against the simulator's working directory, not against the source file.
     """
-    sim = _simulator()
+    sim = SIMULATOR
     sources = [f for f in os.listdir(outdir) if f.endswith('.v')]
     out = f'{os.path.basename(testbench)}.vvp'
 
@@ -288,7 +277,6 @@ def run_gate(outdir, testbench):
 
 
 @pytest.mark.sim
-@requires_sim
 @pytest.mark.parametrize('shape', ALL_SHAPES)
 def test_gate_core_is_bit_exact(shape, tmp_path):
     """GATE 1. The emitted core against the numpy golden model, every vector, no exceptions.
@@ -304,7 +292,6 @@ def test_gate_core_is_bit_exact(shape, tmp_path):
 
 
 @pytest.mark.sim
-@requires_sim
 @pytest.mark.parametrize('shape', ALL_SHAPES)
 def test_gate_top_is_bit_exact(shape, tmp_path):
     """GATE 1, top level. Quantized FEATURES through the thermometer encoder and the core.
@@ -322,7 +309,6 @@ def test_gate_top_is_bit_exact(shape, tmp_path):
 
 
 @pytest.mark.sim
-@requires_sim
 def test_the_two_levels_test_different_things(tmp_path):
     """The split is what makes a failure localize itself, so the two must not be the same run.
 
@@ -340,7 +326,6 @@ def test_the_two_levels_test_different_things(tmp_path):
 
 
 @pytest.mark.sim
-@requires_sim
 def test_a_broken_encoder_fails_only_the_top_gate(tmp_path):
     """The localization claim, proved rather than asserted in a comment.
 
@@ -366,7 +351,6 @@ def test_a_broken_encoder_fails_only_the_top_gate(tmp_path):
 
 
 @pytest.mark.sim
-@requires_sim
 def test_gate_reports_a_real_failure(tmp_path):
     """The gate must be capable of FAILING, or a PASS means nothing.
 
