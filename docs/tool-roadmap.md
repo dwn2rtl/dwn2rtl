@@ -1,5 +1,25 @@
 # What the generator needs to become a tool — an audited work list
 
+> ## ⚠️ HISTORICAL — superseded by `overview.md` §6 and the phase ledgers
+>
+> **This was the work list for building the tool, and most of it is done.** Phases 0–3 are
+> closed; the remaining live work is tracked in **`docs/phase4-ledger.md`**, not here. Nothing
+> in this file should be picked up as a task without checking it there first.
+>
+> It stays because it is the **reasoning archive**: the `V*`/`P*`/`Q*` items record why the
+> project does *not* do certain things, and those arguments are still load-bearing. Q7 (no area
+> model) and §5.1 (emit balanced reductions explicitly) are cited by phase 4 as its organising
+> rules.
+>
+> ⚠️ **One entry is now known to be wrong.** **Q9** states that input fractional width is *not*
+> derivable from the checkpoint. Measured on 2026-08-13 against real checkpoints, it usually
+> **is** — MNIST's 2,352 thresholds lie exactly on the k/(2⁸−1) grid, max error 0.00e+00. The
+> withdrawal and what replaces it are in `phase4-ledger.md`. Read Q9 as the question it actually
+> answered — *is this width safe for my data* — and not as settling the whole matter.
+>
+> Timings below (**BEFORE / DURING / AFTER** the MNIST port) are relative to a milestone that has
+> already passed and no longer schedule anything.
+
 **What this is.** Every change required to turn the DWN→RTL generator in this repo into something
 another person could use on their own model, with each item marked by *when* it should happen
 relative to the MNIST port.

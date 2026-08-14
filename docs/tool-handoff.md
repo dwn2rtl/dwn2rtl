@@ -1,5 +1,18 @@
 # Starting the tool — a cold-start handoff
 
+> ## ⚠️ HISTORICAL — superseded by `overview.md`
+>
+> **This document describes starting a project that is now built.** It was the cold-start
+> briefing for phase 0; phases 0–3 are closed and the tool builds, verifies and ships. Read
+> **`docs/overview.md`** for what the tool is and where it stands, and the **phase ledgers and
+> reports** for how it got there.
+>
+> Kept because it records *why* things are the way they are — the scope boundary, the decisions
+> taken before any code existed, and the questions that were open at the time. Where it disagrees
+> with `overview.md` or a phase report, **they win**: several of its open questions have since
+> been answered by measurement (notably Q9 on input precision — see `phase4-ledger.md`).
+> Its "what to do next" sections are spent.
+
 **Read this first, then `docs/tool-roadmap.md` §1–§8.** This file exists so a session can begin
 without reconstructing anything from chat history. Everything below is either settled or explicitly
 open; nothing is left implied.

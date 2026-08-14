@@ -1,8 +1,12 @@
 # dwn2rtl — what it is, how you install it, how you use it
 
-**Read this first if you have never used the tool.** `tool-handoff.md` is the cold-start briefing
-for someone building it; `tool-roadmap.md` is the audited work list. This file is the plain
-description: what the thing is, what it does to what, and how it lands on a computer.
+**Read this first if you have never used the tool.** This file is the plain description: what the
+thing is, what it does to what, and how it lands on a computer. **It is the current document.**
+
+The other two plans beside it are **historical** and carry a banner saying so: `tool-handoff.md`
+was the cold-start briefing for phase 0, and `tool-roadmap.md` was the work list for building
+what is now built. They are kept for their reasoning, not their tasks. Live work is §6 below and
+`phaseN-ledger.md`.
 
 ---
 
