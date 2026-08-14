@@ -319,3 +319,45 @@ say so. Tests now use consecutive `k` including `k=1`, which pins the grid exact
 right, and the test wrong where the implementation was right. Neither was findable by reading.
 
 **Suite: 229 passed, 1 skipped.**
+
+## 2. ⚠️ Hit — a test that passed on Windows and was vacuous on Linux
+
+`2656da3` added tests for the simulator fallback, which had been exercised constantly and checked
+nowhere. Good commit: the fallback runs on every machine where iverilog is not on PATH — the
+default after `winget install Icarus.Verilog` — so breaking it would have turned the gate red
+immediately, and that *looked* like coverage while depending on one developer's PATH staying
+broken.
+
+**CI then failed on both Ubuntu jobs**, and only there:
+
+```
+test_path_wins_over_the_fallback
+  assert '.../stale' == '.../chosen'
+```
+
+**Cause: the stub install was Windows-shaped.** `_fake_install` wrote `iverilog.exe` with no
+execute bit, and `shutil.which` does not mean the same thing on the two platforms. Probed
+directly rather than reasoned about:
+
+| stub | Linux | Windows |
+|---|---|---|
+| `iverilog.exe`, no `+x` | **None** | found |
+| `iverilog`, `+x` | found | **None** |
+| `iverilog`, no `+x` | None | None |
+
+So on Linux **nothing was on PATH at all**. The fallback won by default, and the assertion caught
+a real difference between the platforms rather than a bug in `verify.py` — which is correct as
+written: PATH does win, when there is anything on PATH to win.
+
+⚠️ **The test was worse than failing: on Windows it was passing vacuously in the other
+direction.** It only ever proved the fallback loses to a `.exe` that Windows happens to resolve.
+The precedence it claimed to test was never exercised on either platform.
+
+**Fix:** `_fake_install(..., on_path=True)` writes the platform's own name — suffix conditional on
+`os.name` — and sets the execute bit. The branch is needed in **both** directions, per the table:
+a bare name is invisible to Windows, a `.exe` is invisible to POSIX. One fixed name cannot work.
+
+**The lesson is about the matrix, not the test.** This is the second defect CI's Linux job has
+caught that no amount of local Windows running could (after `requires-python = ">=3.9"`, which
+was unrunnable). Both were *claims that happened to hold on one machine*. That is precisely what
+phase 2's report predicted a matrix is for, and it is now evidenced twice.
