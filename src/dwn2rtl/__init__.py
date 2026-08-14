@@ -48,6 +48,9 @@ _LAZY = {
     # verify has no torch dependency of its own, but it is listed here for one surface rather
     # than two -- and so that `import dwn2rtl` stays a numpy-only import either way.
     'verify': 'verify',
+    'estimate': 'estimate',
+    'find_yosys': 'estimate',
+    'YosysNotFound': 'estimate',
     'find_simulator': 'verify',
     'SimulatorNotFound': 'verify',
 }
@@ -75,8 +78,11 @@ __all__ = [
     'Pipeline',
     'Precision',
     'SimulatorNotFound',
+    'YosysNotFound',
     'build',
+    'estimate',
     'find_simulator',
+    'find_yosys',
     'from_model',
     'load',
     'normalize',

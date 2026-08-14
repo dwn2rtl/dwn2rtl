@@ -27,19 +27,6 @@ import sys
 from . import __version__
 
 
-def _not_yet(name, phase, what):
-    """Fail honestly for a subcommand that is parsed but not yet implemented.
-
-    The alternative -- omitting the subcommand until it works -- makes `--help` misrepresent the
-    tool's shape, and the alternative to THAT is a stub that prints nothing and exits 0, which is
-    indistinguishable from success. Exit 2 and say which phase it lands in.
-    """
-    print(f'dwn2rtl {name}: not implemented yet (phase {phase}).', file=sys.stderr)
-    print(f'  {what}', file=sys.stderr)
-    print(f'  see docs/phase{phase}-ledger.md for where this stands.', file=sys.stderr)
-    return 2
-
-
 def cmd_build(args):
     # Imported here, not at module scope: build pulls in checkpoint.py and therefore torch, and
     # `dwn2rtl verify` must not pay for that. See __init__.py.
@@ -81,9 +68,18 @@ def cmd_verify(args):
 
 
 def cmd_estimate(args):
-    return _not_yet(
-        'estimate', 3,
-        'optional yosys resource estimate; encoder and core reported separately.')
+    # Like verify, this never reads a checkpoint, so it must not import torch.
+    from .estimate import YosysNotFound, estimate
+
+    try:
+        report = estimate(args.dir, yosys=args.yosys)
+    except (FileNotFoundError, YosysNotFound) as e:
+        print(f'dwn2rtl estimate: {e}', file=sys.stderr)
+        return 1
+
+    for line in report.lines():
+        print(line)
+    return 0 if report.ok else 1
 
 
 def build_parser():
@@ -113,8 +109,10 @@ def build_parser():
                    help='path to iverilog, if it is not on PATH and not in a usual place')
     v.set_defaults(func=cmd_verify)
 
-    e = sub.add_parser('estimate', help='resource estimate via yosys, if it is on PATH')
+    e = sub.add_parser('estimate', help='resource estimate via yosys, if it is installed')
     e.add_argument('dir', help='a directory produced by `dwn2rtl build`')
+    e.add_argument('--yosys', metavar='EXE',
+                   help='path to yosys, if it is not on PATH and not in a usual place')
     e.set_defaults(func=cmd_estimate)
 
     return p
