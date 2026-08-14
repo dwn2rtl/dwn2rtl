@@ -97,8 +97,22 @@ def emit(ck, out_path, pipe_lut=PIPE_LUT, pipe_pop=PIPE_POP, pipe_out=PIPE_OUT):
     L.append(f"// run        : {ck.get('run_name', '(unnamed)')}")
     L.append(f"// config     : n={n}, layers={cfg['layers']}, z={cfg['thermometer_bits']}, "
              f'classes={num_classes}')
-    L.append(f"// accuracy   : final {ck['results']['final_acc']:.4f} "
-             f"(software, {ck['results']['best_acc']:.4f} best epoch)")
+    # Accuracy is METADATA -- it reaches this comment and nothing else, and no part of the
+    # emitted hardware depends on it. It was read unconditionally, which made a training
+    # statistic a hard requirement for emitting a design: a user who saved a model without
+    # recording one got a KeyError from a code generator, over a comment.
+    #
+    # Absent is reported as absent. Defaulting to 0.0 would print "final 0.0000" into the
+    # header of a perfectly good design, which reads as "this model scores zero" rather than
+    # "nobody wrote it down" -- a comment that confidently states a wrong number is worse than
+    # no comment.
+    results = ck.get('results') or {}
+    if 'final_acc' in results:
+        best = results.get('best_acc')
+        best_txt = f', {best:.4f} best epoch' if best is not None else ''
+        L.append(f"// accuracy   : final {results['final_acc']:.4f} (software{best_txt})")
+    else:
+        L.append('// accuracy   : not recorded in the checkpoint')
     L.append('//')
     L.append('// Takes the FULL binarized vector, so it can be driven straight from the')
     L.append('// core-level test vectors. Typically most of those bits feed no node at all and')
