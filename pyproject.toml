@@ -1,0 +1,52 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dwn2rtl"
+version = "0.1.0.dev0"
+description = "Turn a trained Differentiable Weightless Neural Network into synthesizable Verilog, and prove the Verilog matches the model"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+keywords = ["dwn", "fpga", "verilog", "rtl", "weightless", "neural-network"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Code Generators",
+]
+
+# numpy does all the real work -- every emitter and the golden model are pure numpy.
+# torch is needed ONLY to read a checkpoint (torch.load, and the tensors inside it).
+# Keeping that boundary sharp is deliberate: it is what would make a torch-free path
+# possible later via an .npz intermediate, without rewriting anything downstream.
+dependencies = [
+    "numpy>=1.22",
+    "torch>=2.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7"]
+
+# This is what makes `dwn2rtl` a terminal command. pip reads it and writes a launcher
+# into the same Scripts/ (Windows) or bin/ (POSIX) directory pip itself lives in, which
+# is already on PATH. The launcher imports this package and calls main() -- so the CLI
+# and `import dwn2rtl` are the same installed code, not two products. See overview.md §2.
+[project.scripts]
+dwn2rtl = "dwn2rtl.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+# The hand-written Verilog primitives and testbenches ship INSIDE the package, so a user
+# who ran `pip install dwn2rtl` and never cloned anything still has them for `verify` to
+# compile against. Without this they are simply absent from the wheel and every emitted
+# design references four modules that do not exist on the machine.
+[tool.setuptools.package-data]
+dwn2rtl = ["rtl/*.v", "rtl/tb/*.v"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "sim: needs a Verilog simulator on PATH -- this is the gate (CLAUDE.md)",
+]
