@@ -34,6 +34,17 @@ def _find_simulator():
 SIMULATOR = _find_simulator()
 
 
+def _find_yosys():
+    from dwn2rtl.estimate import YosysNotFound, find_yosys
+    try:
+        return find_yosys()
+    except YosysNotFound:
+        return None
+
+
+YOSYS = _find_yosys()
+
+
 @pytest.fixture(scope='session')
 def simulator():
     """The simulator, for tests that drive it directly rather than through verify()."""
@@ -50,12 +61,18 @@ def pytest_collection_modifyitems(config, items):
     gate silently absent looks exactly like a run with the gate green -- and CI must be
     configured to have a simulator, not to tolerate its absence.
     """
-    if SIMULATOR is not None:
-        return
-    skip = pytest.mark.skip(reason='no Verilog simulator -- THE GATE DID NOT RUN')
-    for item in items:
-        if 'sim' in item.keywords:
-            item.add_marker(skip)
+    if SIMULATOR is None:
+        skip = pytest.mark.skip(reason='no Verilog simulator -- THE GATE DID NOT RUN')
+        for item in items:
+            if 'sim' in item.keywords:
+                item.add_marker(skip)
+    if YOSYS is None:
+        # Unlike the gate, this one is genuinely optional: `estimate` is the only feature the
+        # roadmap itself calls optional, and a machine without yosys is a supported machine.
+        skip = pytest.mark.skip(reason='no yosys -- estimate is optional')
+        for item in items:
+            if 'yosys' in item.keywords:
+                item.add_marker(skip)
 
 
 def pytest_report_header(config):
