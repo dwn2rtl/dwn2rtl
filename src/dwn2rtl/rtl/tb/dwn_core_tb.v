@@ -1,4 +1,4 @@
-// GATE 1 -- the one non-negotiable rule (CLAUDE.md).
+// GATE 1 -- the one non-negotiable rule.
 //
 // The RTL core is not complete until it bit-exact matches the golden software model on every
 // test vector including edge cases. This testbench is that check, and it is the ONLY
@@ -11,7 +11,7 @@
 //
 // The design is PIPELINED, so this drives a new vector every cycle and checks the result
 // LATENCY cycles later. That is not just bookkeeping: streaming back-to-back vectors and
-// getting every one right is what proves II=1 (brief §9, one classification per clock). A
+// getting every one right is what proves II=1 -- one classification per clock. A
 // design that computed correctly but stalled would pass a one-vector-at-a-time testbench and
 // fail this one.
 //

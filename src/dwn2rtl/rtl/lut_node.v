@@ -5,13 +5,18 @@
 //
 // ADDRESS BIT ORDER IS LOAD-BEARING. Upstream's CUDA kernel builds the address as
 //     addr |= (input[mapping[j][l]] > 0) << l;
-// so mapping slot l is address bit l -- slot 0 is the LSB (docs/reference/checkpoint-format.md §2).
+// so mapping slot l is address bit l -- slot 0 is the LSB (dwn2rtl docs/checkpoint-format.md §2).
 // Getting this backwards yields a design that elaborates, synthesizes, and is wrong on most
 // inputs. The caller is responsible for concatenating in the matching order:
 //     .addr({slot5, slot4, slot3, slot2, slot1, slot0})
 //
-// n=6 is fixed for Phase 1 bring-up (CLAUDE.md) and TABLE is sized 2**6 accordingly. n
-// becomes a sweep axis in Phase 2, at which point TABLE's width has to follow it.
+// n <= 6 AND TABLE IS 64 BITS, and those two facts are the same fact. A node with n inputs
+// needs 2**n table entries; at n=6 that is 64, which is exactly one LUT6. Above 6 the table no
+// longer fits this parameter and Verilog TRUNCATES the excess SILENTLY -- the design elaborates,
+// synthesizes, and computes garbage for every address past 63. dwn2rtl's emitter refuses n > 6
+// for that reason. Supporting a wider n means changing this parameter, the emitter and its
+// read-back check together, and it also means one node is no longer one LUT6, which is the
+// architectural premise the whole approach rests on.
 
 // timescale is required because the testbench declares one, and xsim rejects a design that
 // mixes modules with and without it. Harmless for synthesis.
@@ -26,8 +31,9 @@ module lut_node #(
     output wire         out
 );
 
-    // The learned parameters ARE the table. Vivado must map this to a single LUT6 rather
-    // than inferring distributed RAM -- confirmed by the Phase 1a probe, docs/reference/probe-results.md.
+    // The learned parameters ARE the table. A synthesis tool must map this to a single LUT6
+    // rather than inferring distributed RAM; it is worth checking that it did, because the
+    // area claim for a DWN depends on it. Measured on Vivado in the dwn-fpga-study repository.
     assign out = TABLE[addr];
 
 endmodule

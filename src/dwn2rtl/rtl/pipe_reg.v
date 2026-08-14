@@ -1,7 +1,7 @@
 // A pipeline stage that can be compiled out.
 //
-// Pipeline depth is a Phase 2 sweep axis (brief §10), so stages have to be selectable per
-// config rather than hand-placed once. ENABLE=1 inserts a register; ENABLE=0 is a bare wire,
+// Pipeline depth is a build parameter, not a property of the model, so stages are selectable
+// per build rather than hand-placed once. ENABLE=1 inserts a register; ENABLE=0 is a bare wire,
 // leaving no trace in the netlist. That means one RTL source covers every depth in the sweep,
 // and the latency of a config is just the sum of its enabled stages.
 //
