@@ -49,13 +49,114 @@ def test_an_explicit_path_that_is_not_executable_is_refused():
         find_simulator(iverilog='definitely-not-a-simulator-xyz')
 
 
-def test_not_found_error_lists_what_was_searched_and_how_to_install():
-    """A user with no simulator needs the next action, not a negative result. The phase 0
-    finding is the reason this matters: a Windows install lands in C:\\iverilog\\bin and adds
-    nothing to PATH, so 'not found' is a plausible outcome for someone who has one."""
-    err = SimulatorNotFound(
-        'no Verilog simulator found. Searched:\n  PATH\n\n  winget install Icarus.Verilog')
-    assert 'Searched' in str(err) and 'install' in str(err)
+def _fake_install(d, name='iverilog.exe', runner='vvp.exe'):
+    """A directory that looks like an install: the two files, and nothing runnable in them.
+
+    Deliberately not real executables. find_simulator() locates by os.path.exists, and
+    _iverilog_version() is documented to swallow OSError -- so a stub proves both: the search
+    finds it, and a file that cannot be run yields an empty version instead of a crash.
+    """
+    d.mkdir(parents=True, exist_ok=True)
+    (d / name).write_text('not a real simulator')
+    (d / runner).write_text('not a real runner')
+    return d
+
+
+@pytest.fixture
+def empty_path(tmp_path, monkeypatch):
+    """PATH with no simulator on it -- the Windows user's actual situation."""
+    nowhere = tmp_path / 'nowhere'
+    nowhere.mkdir()
+    monkeypatch.setenv('PATH', str(nowhere))
+    return nowhere
+
+
+# THE FALLBACK NEEDS ITS OWN TESTS, and until phase 4 it had none.
+#
+# It was being EXERCISED constantly and CHECKED nowhere. On a machine where iverilog is not on
+# PATH -- the default after `winget install Icarus.Verilog` -- every run of the suite reached it,
+# so breaking it would have turned the whole gate red immediately. That looked like coverage and
+# was not: it depended on the developer's PATH staying broken. The moment C:\iverilog\bin was
+# added to PATH (2026-08-14) the fallback stopped being reached locally at all, and nothing in
+# the suite would have noticed it rotting.
+#
+# Same class of problem as the implicit `import fixtures` that conftest.py was written to fix:
+# behaviour that works because of an unwritten property of one machine's layout.
+
+def test_the_fallback_finds_an_install_that_is_not_on_path(tmp_path, monkeypatch, empty_path):
+    """The whole reason _CANDIDATE_DIRS exists. A user who plainly has a simulator must not be
+    told they have none."""
+    install = _fake_install(tmp_path / 'iverilog' / 'bin')
+    monkeypatch.setattr('dwn2rtl.verify._CANDIDATE_DIRS', [str(install)])
+
+    sim = find_simulator()
+
+    assert sim.name == 'iverilog'
+    assert sim.compiler == str(install / 'iverilog.exe')
+    # The runner is derived from the compiler's directory, never from PATH -- pairing a
+    # fallback iverilog with some unrelated vvp would be worse than finding neither.
+    assert sim.runner == str(install / 'vvp.exe')
+
+
+def test_the_fallback_also_finds_an_unsuffixed_binary(tmp_path, monkeypatch, empty_path):
+    """The POSIX shape of the same directory -- /opt/oss-cad-suite/bin and friends."""
+    install = _fake_install(tmp_path / 'oss', name='iverilog', runner='vvp')
+    monkeypatch.setattr('dwn2rtl.verify._CANDIDATE_DIRS', [str(install)])
+
+    sim = find_simulator()
+
+    assert sim.compiler == str(install / 'iverilog')
+    assert sim.runner == str(install / 'vvp')
+
+
+def test_an_unrunnable_binary_yields_an_empty_version_rather_than_raising(
+        tmp_path, monkeypatch, empty_path):
+    """`iverilog -V` on something that is not an executable raises OSError. That is caught, and
+    it must stay caught: a version string is cosmetic and must never cost a working simulator."""
+    install = _fake_install(tmp_path / 'bin')
+    monkeypatch.setattr('dwn2rtl.verify._CANDIDATE_DIRS', [str(install)])
+
+    assert find_simulator().version == ''
+
+
+def test_path_wins_over_the_fallback(tmp_path, monkeypatch):
+    """Order is load-bearing. Someone with a deliberate simulator on PATH and a stale install in
+    C:\\iverilog\\bin must get the one they chose."""
+    on_path = _fake_install(tmp_path / 'chosen')
+    fallback = _fake_install(tmp_path / 'stale')
+    monkeypatch.setenv('PATH', str(on_path))
+    monkeypatch.setattr('dwn2rtl.verify._CANDIDATE_DIRS', [str(fallback)])
+
+    assert os.path.dirname(find_simulator().compiler) == str(on_path)
+
+
+def test_the_winget_destination_is_among_the_candidates():
+    """A regression guard on one specific string. `winget install Icarus.Verilog` lands here and
+    adds nothing to PATH (docs/phase0-ledger.md); drop it and Windows users are told they have no
+    simulator while holding one. Cheap to keep, and the failure it prevents is silent."""
+    from dwn2rtl.verify import _CANDIDATE_DIRS
+    assert r'C:\iverilog\bin' in _CANDIDATE_DIRS
+
+
+def test_not_found_error_lists_what_was_searched_and_how_to_install(monkeypatch, empty_path):
+    """A user with no simulator needs the next action, not a negative result.
+
+    This calls find_simulator() rather than constructing a SimulatorNotFound by hand, which is
+    what it did until phase 4 -- asserting on a string the test itself wrote proves the message
+    is well-formed and nothing at all about the search that produces it.
+    """
+    absent = str(empty_path / 'absent')
+    monkeypatch.setattr('dwn2rtl.verify._CANDIDATE_DIRS', [absent])
+
+    with pytest.raises(SimulatorNotFound) as e:
+        find_simulator()
+
+    msg = str(e.value)
+    assert 'PATH' in msg                           # every place it looked, named
+    assert absent in msg
+    assert 'winget install Icarus.Verilog' in msg  # and the next action, per platform
+    assert 'apt install iverilog' in msg
+    assert msg.isascii()                           # cp1252 consoles print this one
 
 
 # ---------------------------------------------------------------------------------------
