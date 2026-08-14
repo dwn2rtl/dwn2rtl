@@ -565,3 +565,56 @@ optimisations rather than before, the work would have been done and the ledger w
 saving that does not exist.
 
 **Remaining: unit 5 (balanced popcount), which is core-side and therefore measurable.**
+
+## 9. ⚠️ Unit 5 CANCELLED — the loop is already rebalanced, and now it is checked
+
+`popcount.v` is a sequential loop, which describes a chain of `WIDTH-1` dependent additions. Its
+comment claimed that was fine because addition is associative and the tool rebalances it —
+and roadmap §5.1's rule is precisely that *"whether a generated reduction is fast should not
+depend on a property of the operator that the emitter never checks."*
+
+**So it was checked.** Logic levels after mapping (`ltp`), with a deliberately non-associative
+mux chain of the same width as a control — the shape `argmax` had before it became a tree:
+
+| width | popcount | mux chain (control) | a linear chain would be | log2(W) |
+|---|---|---|---|---|
+| 10 | **3** | 3 | 9 | 3.3 |
+| 30 | **6** | 11 | 29 | 4.9 |
+| 100 | **8** | 39 | 99 | 6.6 |
+| 600 | **12** | — | 599 | 9.2 |
+
+**popcount tracks log2(WIDTH). The control does not.** The rebalancing is real, and the control
+is what makes that a conclusion rather than an artifact: without it, small numbers everywhere
+could just mean `ltp` does not see depth. At width 100 it reports 39 for the mux chain, so it
+does.
+
+**The distinction is principled, not tool-specific.** Addition is associative, so *any* competent
+tool may rebalance it; selection is not, so *none* can. That is why `argmax` needed an explicit
+tree and `popcount` does not.
+
+**Unit 5 is dropped.** An explicit adder tree would add recursive module instantiation for no
+measured gain. The comment in `popcount.v` was upgraded from an assumption to the table above —
+which is what §5.1's rule actually asked for.
+
+---
+
+## Phase 4 outcome — the optimizations were both cancelled, by measurement
+
+Units 5 and 6 were the phase's two candidate improvements. **Both are dropped, each on a
+measurement that contradicted an argument that looked sound**:
+
+| | the argument | the measurement |
+|---|---|---|
+| **6** narrow the encoder register | 2,352 bits nominal, 720 driven -- the emitter's own comment invited it | costs **552** flops; synthesis already trims *below* the driven count |
+| **5** balanced popcount tree | a loop is a linear chain, and argmax proved that costs real MHz | depth tracks **log2(W)**; the tool rebalances associative addition |
+
+**That is the phase working, not failing.** Roadmap Q7's scar is an area model built on plausible
+reasoning that filtered zero configurations across two studies. Here the reasoning was equally
+plausible and equally wrong, and it cost two measurements instead of two rewrites of shipped RTL
+plus the verification they would have needed.
+
+**What the phase actually delivered** is `estimate` — and the calibration that tells you what its
+numbers are worth: **`dwn_core` 110 against Vivado's 110 exactly, `thermometer_encoder` 717
+against 1519**. The tool now answers "will this fit?" and says which half of the answer to trust.
+
+**Status: units 1-6 done or cancelled; 7 done; 8 tier 1 done, tier 2 (`--data`) open.**

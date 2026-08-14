@@ -23,6 +23,26 @@ module popcount #(
     output reg  [$clog2(WIDTH+1)-1:0]    count
 );
 
+    // WRITTEN AS A LOOP, AND THAT IS SAFE HERE -- measured, not assumed.
+    //
+    // A sequential loop like this describes a linear chain of WIDTH-1 dependent operations. For
+    // argmax that was a real defect: selection is data-dependent and NOT associative, so no tool
+    // can rebalance it, and the chain cost 20 MHz until it was rewritten as an explicit tree.
+    // Addition IS associative, so a synthesis tool is free to rebalance -- but "free to" is not
+    // "does", and dwn2rtl's rule is that a generated reduction must not be fast by luck.
+    //
+    // So it was measured (docs/phase4-ledger.md). Logic levels after mapping, against a
+    // deliberately non-associative mux chain of the same width as a control:
+    //
+    //     width      popcount      mux chain (control)      a linear chain would be
+    //        10             3                        3                            9
+    //        30             6                       11                           29
+    //       100             8                       39                           99
+    //       600            12                        -                          599
+    //
+    // popcount tracks log2(WIDTH); the control does not. The rebalancing is real, and the
+    // control proves the metric can see a deep path when one exists. An explicit adder tree
+    // here would add recursive module instantiation for no measured gain.
     integer i;
 
     always @* begin
