@@ -1,2 +1,22 @@
 CLAUDE.md
 src/dwn2rtl/COPY-ME.md
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+
+# Emitted designs and simulator output. Anything under an out/ or rtl/ a build wrote is
+# reproducible from the checkpoint by definition -- committing it invites the one failure
+# mode CLAUDE.md warns about, RTL and vectors that came from different checkpoints.
+# examples/ is the deliberate exception: one worked example IS committed (see overview.md).
+/out/
+/rtl/
+*.vcd
+*.vvp
+a.out
