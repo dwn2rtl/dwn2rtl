@@ -361,3 +361,125 @@ a bare name is invisible to Windows, a `.exe` is invisible to POSIX. One fixed n
 caught that no amount of local Windows running could (after `requires-python = ">=3.9"`, which
 was unrunnable). Both were *claims that happened to hold on one machine*. That is precisely what
 phase 2's report predicted a matrix is for, and it is now evidenced twice.
+
+---
+
+## 3. Built — yosys installed, and unit 3's calibration done BEFORE anything was changed
+
+**yosys 0.68**, from the OSS CAD Suite Windows build (564 MB compressed, 2.1 GB extracted, at
+`C:\oss-cad-suite`). Removable by deleting that one directory — no installer, no registry, and
+**deliberately not on PATH**: the suite bundles its own `iverilog.exe` and `vvp.exe` among 136
+binaries, and putting it ahead of `C:\iverilog\bin` would silently change which simulator the
+entire gate runs against. `estimate` will find it the way `verify` finds iverilog — PATH, then
+known locations — which is a design this project already has.
+
+⚠️ **yosys needs its own `bin` and `lib` on PATH to run at all.** Invoked by absolute path with a
+clean environment it prints nothing and exits 0 — a silent no-op, which is the worst possible
+failure. `estimate` must pass a prepared environment to the subprocess. (The suite's *iverilog*
+does not need this, so `verify.py` is unaffected — checked, not assumed.)
+
+### 🎯 The calibration, and it changes what `estimate` is allowed to claim
+
+JSC `1x50 z=200`, built **unpipelined** so it matches the study's out-of-context figures exactly
+(FF = 0 in both, confirmed on both sides — the first attempt compared a 4-stage build against
+Vivado's unpipelined numbers and was not apples-to-apples):
+
+| module | yosys `$lut` | Vivado (study, `xc7a35t`) | ratio |
+|---|---|---|---|
+| `dwn_core` | **106** | **110** | **0.96x** |
+| `thermometer_encoder` | **717** | **1519** | **0.47x** |
+| `dwn_top` | **838** | **1621** | **0.52x** |
+
+⚠️ ~~dwn_core 120 (1.09x), dwn_top 854 (0.53x)~~ — **withdrawn, and the reason is a trap worth
+keeping.** The first run used `synth -top M` **without `-flatten`**, so yosys left every
+`lut_node` as its own module in gate primitives (`$_AND_`, `$_NAND_`, ...) and `abc -lut 6`
+mapped **only the top level**. The `$lut` figure scraped from that output was one stray module's
+count, not a total, and it happened to look plausible. Fixed with `synth -top M -flatten`, after
+which there is exactly **one** `$lut` line in the output — which is now the check that flattening
+actually happened, rather than something assumed.
+
+**Two completely different levels of agreement, in one design.**
+
+- **The LUT core: yosys is within 4%.** That is close enough to act on. A 50-node core is 50
+  LUT6 by construction plus the popcount and argmax trees, and both tools find essentially the
+  same thing.
+- **The encoder: yosys reports less than half.** 717 against 1519 for the same 202 comparators —
+  **3.5 LUTs each against Vivado's 7.5**. Not a yosys bug: a 16-bit signed comparison against a
+  constant genuinely fits in ~3 LUT6s, and Vivado on 7-series maps comparators onto carry chains
+  instead, which costs more LUTs as carry inputs. Generic mapping is simply *optimistic* here.
+
+⚠️ **This is the risk the plan named, now measured.** Tuning the encoder until yosys's number
+falls would be optimizing against a tool that disagrees with the user's by 2.1x.
+
+⚠️ **And it distorts this project's headline claim.** The encoder-to-core ratio is **13.8x by
+Vivado and 6.8x by yosys**. A tool that printed the yosys ratio unqualified would *understate the
+very thing it exists to highlight* — that published DWN resource counts omit an encoder which can
+dominate the design.
+
+**Consequences, decided here rather than discovered later:**
+
+1. `estimate` reports LUT counts **with the module they belong to**, and states plainly that
+   generic mapping under-reports comparator-heavy logic. It is an estimate, and the *encoder*
+   half of it is the unreliable half.
+2. **Unit 5 (balanced popcount) is measurable** — it is core-side, where yosys and Vivado agree
+   to 4%.
+3. **Encoder-side changes are not reliably measurable with this tool.** Unit 6 stands anyway,
+   because "do not emit flops nothing drives" is structural and needs no synthesis tool to
+   justify.
+
+## 4. Built — `estimate.py` and `dwn2rtl estimate`
+
+The last stubbed subcommand. Roadmap **P2's command surface is now complete**: `build | verify |
+estimate` all work.
+
+```
+$ dwn2rtl estimate rtl/
+yosys 0.68+64 (C:\oss-cad-suite\bin\yosys.exe)
+
+  thermometer_encoder       717 LUT        0 FF
+  dwn_core                  106 LUT        0 FF
+  dwn_top                   838 LUT        0 FF
+
+  the encoder is 6.8x the core, as generic mapping sees it
+
+ESTIMATE -- yosys generic mapping, not your vendor toolchain.
+Calibrated once against Vivado on xc7a35t: the CORE agreed within 4%, the ENCODER came
+out 2.1x LOW because generic mapping packs comparators more tightly than a carry-chain
+architecture does. Treat core numbers as indicative, encoder numbers as a floor, and
+synthesize for figures you can publish.
+```
+
+**Decided: the calibration is printed with every report, not buried in a doc.** The two halves of
+that output have genuinely different authority, and a reader given both without the caveat would
+grant the encoder figure the core figure's credibility. Same discipline as `derived` / `inferred`
+/ `DEFAULT` in the precision line.
+
+**Decided: `find_yosys` rejects a candidate that cannot report a version.** The silent-no-op case
+is not hypothetical — it is what this yosys does when invoked by absolute path with a clean
+environment. Accepting it would produce empty measurements that look like a very small design.
+
+⚠️ **`-flatten` is load-bearing and is now checked, not assumed.** Without it, `abc -lut 6` maps
+only the top level and the scraped `$lut` figure is one stray submodule's count. After flattening
+there is exactly **one** `$lut` line, and `estimate` treats more than one as an ERROR rather than
+summing them.
+
+## 5. ⚠️ Unit 6 measured — the dead flops are real, and yosys does NOT trim them away
+
+The premise was `pipe_reg #(.WIDTH(2352))` when only 720 bits are driven, with the emitter's own
+comment hoping synthesis would remove the rest. Measured on MNIST `1x300` by toggling that one
+stage:
+
+```
+PIPE_ENC=1   dwn_top  1821 LUT   1808 FF
+PIPE_ENC=0   dwn_top  1818 LUT    704 FF
+```
+
+**The encoder register costs 1,104 flops. Only 720 bits are driven.** So ~384 are dead — 53%
+overhead on that register — and the hope in the comment is only half right: yosys trims some of
+the 2,352 but not down to the useful set.
+
+**Unit 6 is therefore justified by measurement as well as by structure**, and it is FF-side, so
+the 2.1x encoder-LUT calibration gap does not apply — this is a flop count, which both tools
+agree on.
+
+**Suite: `pytest tests/test_estimate.py` 17 passed.**
