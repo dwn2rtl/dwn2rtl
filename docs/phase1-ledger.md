@@ -210,3 +210,113 @@ for any checkpoint that *does* carry results, so nothing the study repo verified
 
 **Suite: 117 passed, 1 xfailed.**
 
+---
+
+## 3. Built — `build.py`, and **the gate went green**
+
+### 🎯 The milestone
+
+**Emitted RTL passed a simulator, bit-exact against the golden model, on every fixture shape.**
+504 vectors each, under **iverilog 12.0** — a non-Xilinx simulator, on generated files, which
+this project had never done:
+
+```
+tiny         504 vectors  PASS (bit-exact on every vector)
+single       504 vectors  PASS
+n6           504 vectors  PASS      n=6, 64-bit tables
+ten_class    504 vectors  PASS      K=10, 4-bit class index
+all_fixed    504 vectors  PASS
+```
+
+Roadmap **Q6 is now measured for emitted files**, not only for the hand-written primitives.
+`ten_class` matters specifically: the study repo's testbench hardcoded a 3-bit index and
+silently checked three of four bits on a 10-class design, which passed. `IDX_W` is derived here
+and the gate covers it.
+
+⚠️ **This is the CORE gate only.** `dwn_top_tb.v` is still empty, so the encoder is emitted,
+copied and unchecked. That is unit 4.
+
+### What `build()` does
+
+`build_core` -> `build_encoder` -> `generate` -> copy the hand-written modules. The order is
+load-bearing rather than conventional: `build_encoder` **reads `dwn_core_params.vh`** to learn
+the core's real pipeline depth instead of being told it twice, because `dwn_top` instantiates
+`dwn_core` and its parameters *override* the core's — told independently, the two could disagree
+and produce a top whose latency constant did not match its own pipeline. Asserted by a test that
+calls the encoder first and requires `FileNotFoundError`.
+
+**Decided: the output directory is self-contained.** The four hand-written primitives are copied
+in beside the emitted files, so a user can hand the folder to any tool without knowing where pip
+put the package. Testbenches go in `tb/` so that `*.v` in the root is exactly the design — two
+testbenches in one compile would give two top modules. Copies are **byte-for-byte**: text mode on
+Windows would rewrite `\n` to `\r\n`, and there is no reason for a copy to alter a file.
+
+**Decided: `build_core` now returns its extracted layers, and `generate` is handed them.** The
+invariant in CLAUDE.md is that vectors and RTL derive from the same checkpoint; passing the same
+in-memory arrays makes that structural rather than merely likely. Re-extracting would be
+deterministic and would almost always agree — "almost" is the problem.
+
+**Decided: every derived number states its provenance.** `integer bits 0` and `frac bits 8` look
+equally authoritative and are not: one is exact, the other is a proof or a guess depending on
+`--input-bits`. The report's right-hand column is the point of it.
+
+```
+features 8, classes 3, layers [12, 9], n=6, z=3   from checkpoint
+integer bits 0                                    derived, exact
+frac bits 8 -> Q0.8 signed (9-bit)                from --input-bits, provably lossless
+```
+
+An unproved width is a **warning**, not a footnote.
+
+### ⚠️ Hit: an empty testbench would have shipped silently
+
+`_copy_package_rtl` copies `tb/*.v` — and `dwn_top_tb.v` is a 0-byte file. Copying it produces an
+output directory that *looks* complete while that level's gate does nothing, which is the exact
+"green light nobody has reason to distrust" failure this whole phase is organised against. It is
+now skipped and warned about at build time:
+
+```
+WARNING   dwn_top_tb.v is EMPTY in the installed package and was not copied
+          -- that level has no testbench, so nothing checks it.
+```
+
+### ⚠️ Hit: the test that proves the gate can FAIL did not, and the reason is the interesting part
+
+A gate that cannot fail is worse than no gate, so there is a test that corrupts an emitted truth
+table and requires a `FAIL`. The first corruption was `64'h` -> `64'hF`.
+
+**It passed.** That produces a **seventeen**-digit literal in a 64-bit parameter, and Verilog
+**silently truncates the excess high digit**, restoring the original sixteen. The design was
+bit-identical and the gate was right to pass it.
+
+That is precisely the silent truncation `emit_core.py`'s `MAX_N` assertion exists to prevent at
+n>6 — *"a 2\*\*n-bit table into a 64-bit parameter and Verilog would TRUNCATE it silently"* —
+reproduced by accident, in a test, on this machine. **A too-wide constant does not error; it
+quietly becomes a different, valid one.** The assertion is not defensive programming; it is
+guarding a real behaviour of the language. Corruption is now a bitwise inversion holding the
+literal at exactly 16 digits, and the gate fails as required.
+
+### ⚠️ Hit: a skipped test is not a passing test
+
+The degeneracy test hunted for a seed that produced a collapsed model and **skipped** when it did
+not find one — so it had been quietly not running. Degeneracy is now *constructed*: setting every
+final-layer table all-positive makes every node output 1, every class tie, and argmax return
+class 0 forever. Deterministic, and it actually executes.
+
+### ⚠️ Hit, tooling: MSYS paths and Windows Python
+
+Passing `/c/Users/...` from the Bash tool into Windows Python created a directory literally at
+`\c\Users\...` on the current drive. The build reported success and wrote to a path that did not
+exist from the shell's point of view. Native `C:\...` paths for anything crossing that boundary.
+Same family as the `\v` path-escape bug CLAUDE.md records from the study repo.
+
+### CLI
+
+`dwn2rtl build model.dwn --out rtl/ --input-bits 8` works end to end, from
+`dwn2rtl.save(model, thermometer, path)` through to a printed report. Exit codes are meaningful
+and distinct: **0** built, **1** the checkpoint was bad, **2** not implemented yet. A bad
+checkpoint prints the `CheckpointError` message rather than a traceback — those messages are the
+contract, and a traceback buries the part the user needs.
+
+**Suite: 146 passed, 1 xfailed. `pytest -m sim`: 6 passed.**
+
