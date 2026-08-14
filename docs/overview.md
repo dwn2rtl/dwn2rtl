@@ -55,7 +55,7 @@ library API — everything it can do, `import dwn2rtl` can do, because it *is* `
 **The CLI is the primary path**, and it is the one the README will lead with:
 
 ```
-dwn2rtl build model.pt --out rtl/ --input-bits 8
+dwn2rtl build model.pt --out rtl/
 dwn2rtl verify rtl/
 ```
 
@@ -68,7 +68,7 @@ live object in memory, and you want to look at the hardware before you commit to
 ```python
 import dwn2rtl
 
-report = dwn2rtl.from_model(model, thermometer).build("rtl/", input_bits=8)
+report = dwn2rtl.build(dwn2rtl.from_model(model, thermometer), "rtl/")
 print(report.comparators, report.nodes)      # encoder vs core, reported separately
 ```
 
@@ -92,13 +92,13 @@ pip install dwn2rtl
 Until then, from source:
 
 ```
-pip install git+https://github.com/<user>/dwn2rtl.git
+pip install git+https://github.com/Krithik4/dwn2rtl.git
 ```
 
 or, to hack on it:
 
 ```
-git clone https://github.com/<user>/dwn2rtl.git
+git clone https://github.com/Krithik4/dwn2rtl.git
 cd dwn2rtl
 pip install -e ".[dev]"
 ```
@@ -147,22 +147,26 @@ That single line is the only requirement the tool places on anyone's training co
 ### On the hardware side — in a terminal
 
 ```
-$ dwn2rtl build model.pt --out rtl/ --input-bits 8
+$ dwn2rtl build model.pt --out rtl/
 
-features 784, classes 10, layers [300], n=6, z=3      from checkpoint
-integer bits 0                                         derived, exact
-frac bits 8 -> Q0.8 signed, 9-bit word                 from --input-bits, provably lossless
-1169 of 2352 thresholds merge at this width            warning
-core     300 nodes                                     
-encoder  720 comparators of 2352 thermometer bits      reported separately, always
-latency  4 cycles, II=1
-wrote rtl/ (9 files)
+features 784, classes 10, layers [300], n=6, z=3   from checkpoint
+integer bits 0                                     derived, exact
+frac bits 8 -> Q0.8 signed (9-bit)                 INFERRED from the thresholds' grid, provably lossless
+
+core      300 nodes, 3 cycles
+encoder   720 comparators of 2352 thermometer bits
+top       4 cycles latency, II=1
+
+vectors   core 504, top 1227, 7/10 classes hit
+note      1169 of 2352 thresholds quantise to a duplicate comparison (1183 distinct)
+wrote     rtl/ (18 files)
 
 $ dwn2rtl verify rtl/
 
-iverilog 12.0 found
-  dwn_core  504 vectors   PASS
+iverilog 12.0 (/usr/bin/iverilog)
+  dwn_core  504 vectors  PASS
   dwn_top   1227 vectors  PASS
+RESULT   PASS
 ```
 
 ### What lands in `rtl/`
@@ -174,6 +178,7 @@ dwn_core_params.vh  dwn_top_params.vh             widths and pipeline depth
 vec_params.vh  top_params.vh                      vector counts for the testbenches
 x_binarized.hex  expected.hex                     core-level golden vectors
 x_quant.hex  expected_top.hex                     top-level golden vectors
+input_scaling.json                                only if the model was trained on scaled features
 tb/dwn_core_tb.v  tb/dwn_top_tb.v                 self-checking testbenches
 ```
 
@@ -227,31 +232,37 @@ nothing is verified.
 The ledger is the evidence; the report is the argument. Writing only the report loses the
 reasoning, and writing only the ledger makes anyone catching up read a diary.
 
-**Phase 0 — make it runnable.** `pyproject.toml` with `rtl/` as package data and the
-`[project.scripts]` entry point, a venv, `iverilog` installed.
+| phase | | status |
+|---|---|---|
+| **0** | **make it runnable** — `pyproject.toml`, package data, the CLI entry point, a venv, a simulator | ✅ closed |
+| **1** | **close the loop** — `checkpoint.py`, synthetic fixtures, `build()`, `dwn_top_tb.v`, `verify.py`, and **the gate green on both levels** | ✅ closed |
+| **2** | **make it a tool** — `conftest.py`, CI on Linux and Windows, every commit | ✅ closed |
+| **3** | **make it usable by someone else** — README, a worked example, the LICENCE, the upstream pin, and cleaning study-repo citations out of the shipped `rtl/*.v` | ✅ closed |
+| **4** | **measure, then optimize** — `estimate` via yosys, then changes justified by measurement | 🔨 in progress |
 
-**Phase 1 — close the loop.** This is the milestone; everything before it is scaffolding.
+**Phase 1 is the milestone.** Everything before it is scaffolding and everything after is
+packaging: a trained DWN goes in and a simulator certifies the Verilog bit-exact against the
+golden model.
 
-1. `checkpoint.py` — sniff the input shape, normalize it, fail loudly by name on a bare
-   `state_dict`.
-2. A synthetic checkpoint generator for tests (small: n=2, 4 features, 2 classes), covering both
-   the learnable and the fixed mapping paths.
-3. `__init__.py` / `build()` — wires `build_core` -> `build_encoder` -> `generate`, in that
-   order. The encoder reads the core's real pipeline depth out of `dwn_core_params.vh` rather
-   than being told it twice.
-4. Write `tb/dwn_top_tb.v`. **It is currently an empty file** — half the gate is missing.
-5. **`iverilog` green end to end, both levels.** Expect friction: vendor-neutrality is so far an
-   *inspection* result, never tested under a non-Xilinx simulator, and `argmax.v`'s 2-D wire
-   arrays inside `generate` are the likely first casualty.
+### Phase 4, and the rule it is organised around
 
-**Phase 2 — make it a tool.** `verify.py` (find a simulator, compile, run, parse PASS/FAIL,
-ASCII-only output), `cli.py` (`build | verify | estimate`), unit tests plus a `sim`-marked gate
-test, CI on Linux and Windows both.
+**No optimization lands on an argument. It lands on a measurement, or it does not land.** That is
+this project's own scar, not a borrowed principle: the study repo built an area model to filter
+configurations too large to synthesize, and across two completed studies it filtered **zero**
+(`tool-roadmap.md` Q7). So `estimate` comes *before* any RTL change — altering the emitter before
+there is a way to tell whether it helped is the same mistake in a different costume.
 
-**Phase 3 — make it usable by someone else.** README, a worked example, a LICENCE (nothing can
-be used or cited without one), pin the upstream DWN commit and re-read `checkpoint-format.md`
-against it, `estimate` via yosys, and clean the study-repo doc references out of the `rtl/*.v`
-headers.
+⚠️ **And the risk that could make the phase harmful:** yosys is not the tool users synthesize
+with. Tuning the emitter until *yosys* numbers improve would optimize against the wrong target.
+Hence two guards — calibrate against the study's real Vivado figures before changing anything,
+and justify every change **structurally** first, using measurement only to confirm it cost
+nothing.
+
+Done so far: precision is now **inferred from the thresholds' grid**, so `dwn2rtl build model.pt`
+needs no `--input-bits` for quantised inputs and derives a 9-bit word for MNIST where it used to
+fall back to a wider default.
+
+Details, including the deferred items and the PyPI prerequisites, are in `phase4-ledger.md`.
 
 **Out of scope, permanently:** the area model, the board harness, the design-space sweep, and
 Learnable Reduction. Each has a recorded reason in `tool-roadmap.md` §7 and Q1/Q7.
