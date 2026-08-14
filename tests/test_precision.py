@@ -15,7 +15,8 @@ import pytest
 
 from dwn2rtl import Pipeline, Precision, precision_for, required_int_bits
 from dwn2rtl.config import BuildConfig
-from dwn2rtl.precision import DEFAULT_CONTINUOUS_FRAC_BITS, comparator_merge_floor
+from dwn2rtl.precision import (DEFAULT_CONTINUOUS_FRAC_BITS, comparator_merge_floor,
+                               infer_input_bits)
 
 
 # --------------------------------------------------------------------------------------
@@ -91,6 +92,116 @@ def test_input_bits_zero_is_honoured_not_treated_as_absent():
     p = precision_for(np.array([[3.0]]), input_bits=0)
     assert p.frac_bits == 0
     assert p.proved is True
+
+
+# --------------------------------------------------------------------------------------
+# Inferring the input's native quantum from the thresholds
+# --------------------------------------------------------------------------------------
+#
+# WHY THIS IS POSSIBLE: a thermometer's thresholds are QUANTILES OF THE TRAINING DATA, so if
+# that data was quantised its quantiles inherit the same grid. The checkpoint carries a
+# fingerprint of the input's precision.
+#
+# It does not contradict roadmap Q9. Q9 says you cannot tell from a checkpoint whether a width
+# is SAFE FOR YOUR DATA, which remains true. What is recovered is the input's native QUANTUM,
+# which when it exists makes that question vanish rather than answering it.
+
+# ⚠️ These use CONSECUTIVE k, deliberately, and the first version of them did not.
+#
+# It sampled `arange(0, 2**n, stride)`, so every k shared a factor with the stride -- and values
+# that are all multiples of 40 over 4096 genuinely lie on the coarser m/512 grid. The inference
+# returned 9 instead of 12 and was RIGHT; the test data was wrong. Consecutive k including k=1
+# pins the grid exactly, because 1/(2**n - 1) lies on no coarser one.
+#
+# Worth keeping as a warning: a subsampled grid is a different, coarser grid, and that is true
+# of real data too. A sensor read every 4th count is effectively lower precision.
+
+@pytest.mark.parametrize('n', [4, 8, 12, 16])
+def test_a_scaled_integer_grid_is_recognised(n):
+    """k/(2**n - 1) -- images and most normalised data."""
+    k = np.arange(min(64, 2 ** n))
+    assert infer_input_bits(k / (2 ** n - 1)) == n
+
+
+@pytest.mark.parametrize('n', [4, 8, 12])
+def test_a_raw_fixed_point_grid_is_recognised(n):
+    """k/2**n -- audio and many ADC pipelines. Both grids occur, so both are checked."""
+    k = np.arange(min(64, 2 ** n))
+    assert infer_input_bits(k / (2 ** n)) == n
+
+
+def test_the_smallest_grid_wins_and_this_is_load_bearing():
+    """Every coarse grid is a subset of every finer one: 8-bit data satisfies k/255 AND
+    257k/65535. Returning any but the smallest gives a needlessly wide word for no gain --
+    measured on the real MNIST checkpoint, which matches at both n=8 and n=16."""
+    k = np.arange(256)
+    thr = (k / 255).reshape(16, 16)
+    assert infer_input_bits(thr) == 8
+
+
+def test_continuous_data_infers_nothing():
+    """Standard-scaled features have no quantum. A false positive here would silently narrow
+    the word and change encoder bits, so the failure mode has to be 'no answer', never a
+    plausible wrong one."""
+    thr = np.random.default_rng(0).uniform(-5, 5, (16, 16))
+    assert infer_input_bits(thr) is None
+
+
+def test_small_magnitude_values_do_not_match_every_coarse_grid():
+    """The false positive that closeness alone lets through, and it is the dangerous one.
+
+    Values of ~0.001 scaled by the n=1 grid all round to 0, so the residual is tiny under any
+    absolute tolerance and a naive check infers n=1 -- a ONE-BIT fractional word, labelled
+    provably lossless. Found by test_a_scaled_integer_grid_is_recognised[16], whose k/65535
+    inputs are all under 0.001.
+
+    The fix is to require the grid to SEPARATE the thresholds, not merely to sit near them.
+    """
+    tiny = np.arange(64) / 65535          # every value < 0.001
+    assert infer_input_bits(tiny) == 16, 'inferred a coarse grid for small-magnitude values'
+
+    # And directly: a grid that collapses distinct thresholds together is not their quantum.
+    collapsing = np.array([0.0001, 0.0002, 0.0003, 0.0004, 0.0005, 0.0006, 0.0007, 0.0008])
+    assert infer_input_bits(collapsing, max_bits=4) is None
+
+
+def test_too_few_thresholds_infer_nothing():
+    """Four values lie on some coarse grid by coincidence; a hundred do not. Below the minimum
+    a match is not evidence, so no claim is made."""
+    assert infer_input_bits(np.array([[0.0, 0.5, 1.0]])) is None
+
+
+def test_inference_is_used_when_no_flag_is_given():
+    """The zero-friction path: `dwn2rtl build model.pt` and nothing else."""
+    thr = (np.arange(256) / 255).reshape(16, 16)
+    p = precision_for(thr)
+    assert (p.frac_bits, p.source, p.proved) == (8, 'inferred', True)
+
+
+def test_an_explicit_flag_overrides_inference():
+    """The user may know their deployment differs from their training data."""
+    thr = (np.arange(256) / 255).reshape(16, 16)
+    p = precision_for(thr, input_bits=12)
+    assert (p.frac_bits, p.source) == (12, 'given')
+
+
+def test_inference_can_be_switched_off():
+    thr = (np.arange(256) / 255).reshape(16, 16)
+    p = precision_for(thr, infer=False)
+    assert (p.frac_bits, p.source) == (DEFAULT_CONTINUOUS_FRAC_BITS, 'default')
+
+
+def test_inferred_and_given_are_equally_proved_but_distinguishable():
+    """Both rest on the same assumption -- that inference-time data shares training-time
+    precision -- so inference is no weaker than the flag it replaces. But a report must be able
+    to say which happened, because only one of them was the user's own claim."""
+    grid = (np.arange(256) / 255).reshape(16, 16)
+    inferred = precision_for(grid)
+    given = precision_for(grid, input_bits=8)
+
+    assert inferred.proved and given.proved
+    assert inferred.frac_bits == given.frac_bits == 8
+    assert inferred.source != given.source
 
 
 # --------------------------------------------------------------------------------------

@@ -91,9 +91,15 @@ class BuildReport:
             (f'features {self.features}, classes {self.classes}, layers {self.layers}, '
              f'n={self.n}, z={self.thermometer_bits // self.features}', 'from checkpoint'),
             (f'integer bits {p.int_bits}', 'derived, exact'),
-            (f'frac bits {p.frac_bits} -> {p}',
-             'from --input-bits, provably lossless' if p.proved
-             else 'DEFAULT for a continuous input, NOT measured'),
+            # Three provenances, three different claims. 'inferred' is as strong as 'given' --
+            # both rest on the input having a native quantum -- but it is labelled distinctly so
+            # a user can see the tool made the choice and can override it if the assumption is
+            # wrong for their deployment.
+            (f'frac bits {p.frac_bits} -> {p}', {
+                'given': 'from --input-bits, provably lossless',
+                'inferred': "INFERRED from the thresholds' grid, provably lossless",
+                'default': 'DEFAULT for a continuous input, NOT measured',
+            }[p.source]),
         ]
         width = max(len(left) for left, _ in facts)
         out = [f'{left:<{width}}   {right}' for left, right in facts]

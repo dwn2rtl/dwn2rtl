@@ -100,8 +100,11 @@ def build_parser():
                    help='output directory for the emitted design')
     # Not --frac-bits. See this module's docstring, and roadmap Q9.
     b.add_argument('--input-bits', type=int, metavar='N',
-                   help="the INPUT's precision in bits (8-bit pixels -> 8). Omit for a "
-                        'continuous input, which takes a default and is reported as unproved')
+                   help="the INPUT's precision in bits (8-bit pixels -> 8). USUALLY "
+                        'UNNECESSARY: if the thresholds lie on a dyadic grid, the training '
+                        'data had a native quantum and it is inferred. Otherwise a documented '
+                        'default is used and reported as a default. Pass this to override '
+                        'either')
     b.set_defaults(func=cmd_build)
 
     v = sub.add_parser('verify', help='compile and run the emitted testbenches')
