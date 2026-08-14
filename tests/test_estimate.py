@@ -107,9 +107,14 @@ def test_the_top_is_bigger_than_either_half(built):
 def test_the_pipeline_registers_show_up_as_flops(tmp_path):
     """The measurement that decides whether an emitted register costs anything.
 
-    PIPE_ENC toggles a register nominally as wide as the whole thermometer vector while only the
-    used bits are driven. Turning it off must remove flops -- if it did not, the emitter's
-    pipeline parameters would not be reaching the synthesised design at all.
+    PIPE_ENC toggles a register nominally as wide as the whole thermometer vector. Turning it
+    off must remove flops -- if it did not, the emitter's pipeline parameters would not be
+    reaching the synthesised design at all.
+
+    It deliberately does NOT assert how many. Measured on MNIST, that register costs 552 flops
+    for 2,352 nominal bits of which 720 are driven -- synthesis trims it below even the driven
+    count, because duplicate comparators share. Pinning a number here would pin one tool's
+    optimiser.
     """
     from dwn2rtl import Pipeline
     ck = fixtures.make('n6')
@@ -124,19 +129,34 @@ def test_the_pipeline_registers_show_up_as_flops(tmp_path):
 
 
 @pytest.mark.yosys
-def test_flattening_is_verified_not_assumed(built):
-    """⚠️ The trap that produced a wrong calibration number before it was caught.
+def test_a_successful_measurement_leaves_no_unmapped_gates(built):
+    """⚠️ The check that makes the number mean anything, and it was learned the hard way.
 
-    Without `-flatten`, yosys leaves every lut_node as its own module in gate primitives and
-    `abc -lut 6` maps ONLY the top level -- so the $lut figure is one stray submodule's count,
-    not the design's, and it looks entirely plausible. After flattening there is exactly one
-    $lut line, and more than one is treated as an error rather than summed.
+    An earlier version asserted a LUT floor derived from the node count. That was unsound --
+    nodes whose outputs feed nothing are legitimately removed, so a low count can be correct --
+    and it failed on yosys 0.33 for the right reason with the wrong explanation.
+
+    What 0.33 actually did was report ONE LUT for a 21-node core while leaving the rest as
+    unmapped gate primitives, and the old code accepted that as a successful measurement. The
+    real invariant is therefore not "at least N LUTs" but "nothing left unmapped": if
+    `abc -lut 6` did not cover the design, the count is a fragment and must be an ERROR.
     """
-    r = estimate(built, modules=['dwn_core'])
-    core = r.modules[0]
-    assert core.ok and core.status == 'OK'
-    # A 12-node n=6 core is at least a LUT per node; a stray submodule count would be far less.
-    assert core.luts >= 12, f'{core.luts} LUTs for 12 nodes suggests an unflattened count'
+    core = estimate(built, modules=['dwn_core']).modules[0]
+    assert core.status == 'OK', core.detail
+    assert core.luts > 0
+
+
+def test_unmapped_gates_are_an_error_not_a_number():
+    """Asserted without yosys, because it is a property of how a result is interpreted.
+
+    A design yosys could not map must not come back as a small design. This is the exact
+    failure mode Ubuntu's yosys 0.33 produced, and the reason the report distinguishes them.
+    """
+    from dwn2rtl.estimate import ModuleArea
+    fragment = ModuleArea('dwn_core', luts=1, flops=72, status='ERROR',
+                          detail='42 unmapped gate cells remain')
+    assert not fragment.ok
+    assert 'unmapped' in fragment.detail
 
 
 # ---------------------------------------------------------------------------------------

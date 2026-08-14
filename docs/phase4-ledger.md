@@ -386,9 +386,9 @@ Vivado's unpipelined numbers and was not apples-to-apples):
 
 | module | yosys `$lut` | Vivado (study, `xc7a35t`) | ratio |
 |---|---|---|---|
-| `dwn_core` | **106** | **110** | **0.96x** |
+| `dwn_core` | **110** | **110** | **1.00x** |
 | `thermometer_encoder` | **717** | **1519** | **0.47x** |
-| `dwn_top` | **838** | **1621** | **0.52x** |
+| `dwn_top` | **833** | **1621** | **0.51x** |
 
 ⚠️ ~~dwn_core 120 (1.09x), dwn_top 854 (0.53x)~~ — **withdrawn, and the reason is a trap worth
 keeping.** The first run used `synth -top M` **without `-flatten`**, so yosys left every
@@ -400,7 +400,7 @@ actually happened, rather than something assumed.
 
 **Two completely different levels of agreement, in one design.**
 
-- **The LUT core: yosys is within 4%.** That is close enough to act on. A 50-node core is 50
+- **The LUT core: yosys lands on Vivado exactly.** That is close enough to act on. A 50-node core is 50
   LUT6 by construction plus the popcount and argmax trees, and both tools find essentially the
   same thing.
 - **The encoder: yosys reports less than half.** 717 against 1519 for the same 202 comparators —
@@ -422,7 +422,7 @@ dominate the design.
    generic mapping under-reports comparator-heavy logic. It is an estimate, and the *encoder*
    half of it is the unreliable half.
 2. **Unit 5 (balanced popcount) is measurable** — it is core-side, where yosys and Vivado agree
-   to 4%.
+   exactly on the calibration design.
 3. **Encoder-side changes are not reliably measurable with this tool.** Unit 6 stands anyway,
    because "do not emit flops nothing drives" is structural and needs no synthesis tool to
    justify.
@@ -504,3 +504,64 @@ in order are the `stat` cell-name format, then `-flatten`.
 
 Recording this as unverified rather than asserting it works is the point: the two defects CI has
 already caught were both claims that happened to hold on one machine.
+
+## 7. ⚠️ CI on yosys 0.33 broke it, and the fix is a better tool
+
+Ubuntu ships **0.33**; development was on **0.68**. Two estimate tests failed there, and the
+symptom was not a crash:
+
+```
+dwn_core: 1 LUT, 72 flops, status OK
+```
+
+**One LUT for a 21-node core, reported as a successful measurement.** The tests caught it only
+because they asserted a LUT floor derived from the node count — which was itself unsound
+reasoning (nodes feeding nothing are legitimately removed, so a low count *can* be correct).
+Right failure, wrong explanation.
+
+**Root cause: scraping `stat` was never sound.** `stat` prints one section per surviving module,
+including leftovers still holding pre-mapping gate cells, so reading a number out of it means
+picking the right section — and picking the wrong one is silent. Confirmed locally: a `stat`
+section for `dwn_core` showed `$_AND_`/`$_NAND_` gates while `select -count t:$lut` on the same
+design reported 109 LUTs and **zero** unmapped gates. The section was a leftover.
+
+**Three changes, each measured:**
+
+1. **`select -count` instead of scraping `stat`.** It operates on the whole design after
+   `opt_clean` and answers one question at a time.
+2. **Explicit `hierarchy; flatten` instead of `synth -flatten`.** More portable across versions,
+   and better here: `dwn_core` now measures **110 LUTs against Vivado's 110 — exactly**, where
+   `synth -flatten` gave 106.
+3. ⚠️ **A mapped design must have NO generic gate primitives left.** Any survivor means
+   `abc -lut 6` did not cover the design and the LUT count is a fragment, so it is an **ERROR**
+   with the yosys version named — not a number. This is what 0.33 would now produce instead of
+   `1`.
+
+**The lesson generalises past this bug: a measurement tool's first duty is to know when it has
+not measured.** `verify` already refuses to call an unchecked thing a pass; `estimate` now
+refuses to call an unmapped design small.
+
+## 8. ⚠️ Unit 6 CANCELLED — measured, and the premise was wrong
+
+§5 claimed the encoder register wastes 384 flops. **Withdrawn: that number came from the broken
+`stat` parse.** Re-measured with `select -count`, on MNIST `1x300`:
+
+```
+PIPE_ENC=1   dwn_top  1826 LUT   904 FF
+PIPE_ENC=0   dwn_top  1819 LUT   352 FF
+```
+
+~~1,104 flops, 384 dead~~ -> **552 flops**, for a register nominally 2,352 bits wide of which 720
+are driven. Synthesis trims it **below even the driven count**, because duplicate comparators
+share a flop — consistent with the 1,169 of 2,352 thresholds that quantise to duplicates on this
+model.
+
+**So there is nothing to reclaim.** Narrowing the register explicitly would save nothing and
+might well *prevent* that sharing. Unit 6 is dropped.
+
+**This is the phase's rule earning its keep.** The change looked obviously right — the emitter's
+own comment invited it — and measurement said no. Had `estimate` been built after the
+optimisations rather than before, the work would have been done and the ledger would record a
+saving that does not exist.
+
+**Remaining: unit 5 (balanced popcount), which is core-side and therefore measurable.**

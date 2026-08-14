@@ -54,8 +54,13 @@ MODULES = {
     'dwn_top': ('dwn_top.v', 'dwn_core.v', 'thermometer_encoder.v') + PRIMITIVES,
 }
 
-_LUT = re.compile(r'(\d+)\s+\$lut\b')
-_FF = re.compile(r'(\d+)\s+\$_DFF')
+_COUNT = re.compile(r'(\d+) objects\.')
+
+# The generic gate primitives yosys emits before technology mapping. AFTER `abc -lut 6` there
+# must be NONE of them left: any survivor means the mapping did not cover the design, and the
+# $lut figure is then a fragment rather than an answer.
+_GATES = ('$_AND_', '$_NAND_', '$_OR_', '$_NOR_', '$_XOR_', '$_XNOR_',
+          '$_NOT_', '$_MUX_', '$_ANDNOT_', '$_ORNOT_')
 
 
 class YosysNotFound(RuntimeError):
@@ -205,14 +210,27 @@ def _run(yosys, outdir, module, timeout):
     if missing:
         return ModuleArea(module, status='MISSING', detail=', '.join(missing))
 
-    # -flatten is LOAD-BEARING, not tidiness. Without it yosys leaves every lut_node as its own
-    # module in gate primitives and `abc -lut 6` maps only the top level -- so the $lut figure
-    # is one stray submodule's count rather than the design's, and it looks plausible. That
-    # produced a wrong calibration number before it was caught (phase 4 ledger §3).
+    # `flatten` is LOAD-BEARING, not tidiness. Without it, every lut_node stays its own module
+    # and `abc -lut 6` maps only the top level, so the count is a fragment that looks plausible.
+    # It is an EXPLICIT PASS rather than `synth -flatten`, which is both more portable across
+    # yosys versions and measurably better here: explicit flatten reports 110 LUTs for JSC's
+    # core against Vivado's 110, where `synth -flatten` gave 106.
+    #
+    # The numbers come from `select -count`, NOT from scraping `stat`. `stat` prints one section
+    # per surviving module -- including leftovers that still hold pre-mapping gate cells -- so
+    # reading a figure out of it depends on picking the right section, and picking the wrong one
+    # is silent. `select` operates on the whole design after opt_clean and answers exactly one
+    # question at a time.
+    gates = ' '.join(f't:{g}' for g in _GATES)
     script = (f'read_verilog {" ".join(sources)}; '
-              f'synth -top {module} -flatten; '
+              f'hierarchy -top {module}; '
+              f'flatten; '
+              f'synth -top {module}; '
               f'abc -lut 6; '
-              f'stat')
+              f'opt_clean; '
+              f'select -count t:$lut; '
+              f'select -count t:$_DFF_*; '
+              f'select -count {gates}')
     try:
         proc = subprocess.run([yosys.exe, '-p', script], cwd=outdir, capture_output=True,
                               text=True, timeout=timeout, env=yosys.environment())
@@ -222,19 +240,29 @@ def _run(yosys, outdir, module, timeout):
         tail = (proc.stderr or proc.stdout).strip().splitlines()[-3:]
         return ModuleArea(module, status='ERROR', detail='\n      '.join(tail))
 
-    hits = _LUT.findall(proc.stdout)
-    if not hits:
+    counts = _COUNT.findall(proc.stdout)
+    if len(counts) < 3:
         return ModuleArea(module, status='ERROR',
-                          detail='yosys reported no $lut cells; mapping did not run')
-    # After -flatten the design is a single module, so exactly one $lut line is expected. More
-    # than one means flattening did not happen and the numbers are not the whole design.
-    if len(hits) > 1:
-        return ModuleArea(module, status='ERROR',
-                          detail=f'{len(hits)} modules still present after -flatten; '
-                                 'the count would not be the whole design')
+                          detail=f'expected three counts from yosys, got {len(counts)} -- '
+                                 f'`select -count` did not behave as expected on '
+                                 f'yosys {yosys.version or "(unknown)"}')
+    luts, flops, unmapped = (int(n) for n in counts[-3:])
 
-    ff = _FF.findall(proc.stdout)
-    return ModuleArea(module, luts=int(hits[0]), flops=sum(int(n) for n in ff))
+    # ⚠️ THE CHECK THAT MAKES THE NUMBER MEAN SOMETHING. Generic gate primitives surviving
+    # `abc -lut 6` mean the mapping did not cover the design, so the LUT count is a fragment.
+    #
+    # This is not hypothetical: yosys 0.33 (Ubuntu's package) reported ONE LUT for a 21-node
+    # core, and the previous implementation accepted it as a successful measurement. A wrong
+    # number presented as a result is worse than an error, because nothing downstream can tell.
+    if unmapped:
+        return ModuleArea(module, luts=luts, flops=flops, status='ERROR',
+                          detail=f'{unmapped} unmapped gate cells remain after `abc -lut 6` on '
+                                 f'yosys {yosys.version or "(unknown)"}; the LUT count would be '
+                                 f'a fragment of the design, not its size')
+    if not luts:
+        return ModuleArea(module, status='ERROR', detail='yosys mapped the design to no LUTs')
+
+    return ModuleArea(module, luts=luts, flops=flops)
 
 
 def estimate(outdir, modules=None, yosys=None, timeout=1800):
