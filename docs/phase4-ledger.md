@@ -4,7 +4,7 @@
 in that order, because the reverse is how the study repo's area model came to filter zero
 configurations across two complete studies.
 
-**Status: PLANNED, not started.**
+**Status: IN PROGRESS.** Unit 8 tier 1 is built. Units 1-7 not started.
 
 > Conventions in `overview.md` §6. Entries oldest first, recording *built* / *hit* / *decided*.
 > Reversed decisions stay, struck through, with the reason.
@@ -92,14 +92,34 @@ the data had a native quantum, the thresholds sit on that quantum. Probed agains
 checkpoints:
 
 ```
-mnist_n6_z3_distributive_w300      2352 thresholds   on the k/(2^8-1) grid, max err 0.00e+00
+mnist_n6_z3_distributive_w300      2352 thresholds   on the k/(2^8-1) grid
 dwn_jsc_t200_distributive_50       3200 thresholds   no dyadic grid -- genuinely continuous
 dwn_jsc_t8_distributive_300-100     128 thresholds   no dyadic grid -- genuinely continuous
 ```
 
-**Max error exactly zero across 2,352 values.** That is not a near miss to be thresholded, it is
-the same grid. And JSC does not false-positive: standard-scaled features land on no dyadic grid,
-which is the correct answer.
+⚠️ ~~Max error exactly zero across 2,352 values.~~ **Withdrawn — that was float32 arithmetic
+flattering itself.** Re-measured in float64:
+
+| | residual against the k/(2^n - 1) grid |
+|---|---|
+| MNIST, n=8 | **7.57e-06** — on grid |
+| MNIST, n=12 | 4.71e-01 — off |
+| JSC, every n from 8 to 16 | **~5.0e-01** — off at every width |
+
+**What makes the inference safe is not exactness, it is the margin**: on-grid 7.6e-06 against
+off-grid 5e-01, five orders of magnitude apart. Any tolerance between roughly 1e-4 and 1e-2
+separates them, so the threshold is not a delicate tuning choice — which is the property worth
+having, and it is measured rather than assumed.
+
+JSC does not false-positive: standard-scaled features land on no dyadic grid at any width, which
+is the correct answer.
+
+⚠️ **The smallest n is load-bearing, and this is a real trap.** MNIST also passes at n=16
+(residual 1.9e-03), because `k/255 = 257k/65535` exactly — **every coarse grid is a subset of
+every finer one**. The inference must therefore take the *smallest* n that fits, which is the
+coarsest grid the data actually lives on and so its true quantum. Any other match gives a
+needlessly wide word, which costs area in exactly the way this phase is otherwise trying to
+reduce.
 
 So `dwn2rtl build model.pt` with **no flags at all** can derive `Q0.8, 9-bit` for MNIST rather
 than falling back to a 16-bit default — and can still say honestly that JSC's width is a default.
@@ -235,3 +255,67 @@ Reporting the **encoder-to-core ratio** directly is deliberate. It is the projec
 finding — published DWN resource counts omit the encoder, and on the smallest studied model it is
 fourteen times the network it feeds — and a tool that emits both and reports only their sum would
 reproduce the reporting defect it exists to correct.
+
+---
+
+## 1. Built — unit 8 tier 1: precision inferred from the thresholds
+
+**`dwn2rtl build model.pt` with no flags now derives the right word width for quantised inputs.**
+Measured on the real checkpoints:
+
+| | before | now |
+|---|---|---|
+| MNIST `1x300` | Q0.12, **13-bit**, unproved | **Q0.8, 9-bit, inferred, provably lossless** |
+| JSC `1x50 z=200` | Q3.12, 16-bit, default | Q3.12, 16-bit, default — correct, no grid exists |
+| JSC `300-100 z=8` | Q1.12, 14-bit, default | Q1.12, 14-bit, default |
+
+Four bits narrower on every image model, with no user input, and it is the *provable* kind of
+lossless rather than the hoped-for kind.
+
+**`precision_for()` now runs three tiers:** `given` (the flag) -> `inferred` (the grid) ->
+`default`. `Precision.proved` became a **property derived from `source`** rather than a field
+stored beside it, so the two cannot drift.
+
+**Decided: `inferred` is labelled distinctly from `given`, though both are equally proved.** Both
+rest on the same assumption — that inference-time data shares training-time precision — so
+inference is no weaker than the flag it replaces. But a user should be able to see that the tool
+made the choice, and override it if their deployment differs.
+
+### ⚠️ Hit: the first implementation would have emitted a ONE-BIT word, labelled provable
+
+Caught by `test_a_scaled_integer_grid_is_recognised[16]`, whose `k/65535` inputs are all below
+0.001. It inferred **n=1**.
+
+**Cause.** Checking those values against the n=1 grid multiplies by 1, everything rounds to 0,
+and the residual is ~9.6e-04 — under the 1e-3 absolute tolerance. So a grid that resolves nothing
+at all looked like a perfect match. On any model with small-magnitude features this would have
+emitted a **one-bit fractional word described as "provably lossless"**: silently catastrophic,
+and exactly the false positive this function must never produce.
+
+**Fix.** Closeness is not the criterion; **separation** is. A grid only qualifies if it maps the
+distinct thresholds to *distinct* grid points:
+
+```python
+if np.unique(rounded).size == distinct.size:
+```
+
+That is the honest statement of what "these values lie on this grid" means — if two distinct
+thresholds collapse onto one grid point, the grid is too coarse to be the quantum they came from.
+It subsumes the tolerance rather than replacing it, and needs no tuning.
+
+### ⚠️ Hit, the other way round: the test data was wrong and the code was right
+
+`test_a_raw_fixed_point_grid_is_recognised[12]` failed, reporting 9 instead of 12. The
+implementation was correct. The test sampled `arange(0, 4096, 40)`, so every `k` was a multiple
+of 40 — and values that are all multiples of 40 over 4096 **genuinely do lie on the coarser
+m/512 grid.**
+
+Worth keeping, because it is true of real data too: **a subsampled grid is a different, coarser
+grid.** A sensor read every fourth count is effectively lower precision, and the inference will
+say so. Tests now use consecutive `k` including `k=1`, which pins the grid exactly because
+`1/(2**n - 1)` lies on no coarser one.
+
+**Two defects in one unit, one in each direction** — the implementation wrong where the test was
+right, and the test wrong where the implementation was right. Neither was findable by reading.
+
+**Suite: 229 passed, 1 skipped.**
