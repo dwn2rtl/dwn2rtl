@@ -3,7 +3,7 @@
 **Goal.** The generator works and is verified (phase 1). This phase makes it *stay* working
 without anyone remembering to check, and proves it works somewhere other than one Windows laptop.
 
-**Status: OPEN.**
+**Status: CLOSED.** Retrospective in `phase2-report.md`.
 
 > Conventions in `overview.md` §6. Entries oldest first, recording *built* / *hit* / *decided*.
 > Reversed decisions stay, struck through, with the reason.
@@ -161,3 +161,27 @@ and the answer does not vary by interpreter.
 into a fact, which is the general reason this job exists.
 
 **Suite: 198 passed, 1 skipped (Windows). 181 passed, 8 skipped (Linux).**
+
+## 4. CI is green — first push, no fixes
+
+All checks passed on the first run: both platforms, the floor job, and the `package` job.
+
+**Three predicted failure points, all wrong**, which is worth recording because the prediction was
+reasonable and the local rehearsal is why it did not matter:
+
+| predicted to break | actual |
+|---|---|
+| `choco install iverilog` on `windows-latest` — wrong package name, or not landing in `C:\iverilog\bin` where `verify.py` looks | worked. And `verify.py`'s fallback search is why it did not need to be on PATH |
+| the 3.10 floor job — never run anywhere | worked, and it was corrected *before* pushing precisely because torch's own metadata was checked rather than assumed |
+| `$GITHUB_WORKSPACE` inside `working-directory: /tmp/elsewhere` in the `package` job | worked |
+
+**The lesson is about the rehearsal, not the predictions.** Everything that *could* be run
+locally was: the YAML parsed and its matrix expanded, the "gate actually ran" step executed, and
+the whole `package` job performed by hand with a real wheel in a clean venv. The two defects that
+would have turned the first CI run red — the `>=3.9` floor and the `tomllib` import — were both
+found on this machine, by checking a claim against installed metadata instead of trusting it.
+A workflow that has never run is a guess; the fix is to stop guessing before pushing, not to
+push and iterate.
+
+**Phase 2 is closed.** The gate now runs on Linux and Windows on every commit, which is what
+CLAUDE.md requires.
