@@ -1,0 +1,144 @@
+# The gate, on every commit (CLAUDE.md).
+#
+#   "Emitted RTL is not correct until a simulator says it matches the golden model on every
+#    vector. This runs in CI on every commit. A change that cannot pass it is not finished."
+#
+# TWO PLATFORMS, DELIBERATELY. Windows is the primary development target, because that is where
+# most users will pip install this -- and it is where the odd failures live: the study repo hit
+# three Windows-only bugs in one week (a cp1252 console crash on an emoji in print(), a \v path
+# escape turning scripts\verify into a vertical tab, and CRLF breaking multi-line string
+# matching). All three are invisible on Linux. Linux is where everyone else will run it.
+#
+# THE JOB MUST FAIL WHEN THE SIMULATOR IS MISSING, not skip. tests/conftest.py skips
+# `sim`-marked tests when it cannot find one, which is right for a contributor's laptop and
+# wrong here: a CI run whose gate silently did not execute is indistinguishable from a green
+# one. The "the gate actually ran" step below is what makes that impossible.
+
+name: CI
+
+on:
+  push:
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: ${{ matrix.os }} / py${{ matrix.python }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false          # a Windows-only failure must not hide a Linux one, or vice versa
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python: ['3.12']
+        include:
+          # The floor declared in pyproject.toml. A supported version nothing ever runs on is a
+          # claim, not a fact -- and this job is what turns it into one. It also covers the
+          # <3.11 path where tomllib is absent.
+          - os: ubuntu-latest
+            python: '3.10'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+
+      - name: Install iverilog (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y iverilog
+
+      # winget is not available on GitHub's Windows runners; Chocolatey is preinstalled.
+      # Whichever installer is used, note that it does NOT put iverilog on PATH -- see the
+      # phase 0 ledger. verify.py searches C:\iverilog\bin for exactly this reason, so the
+      # tool is being exercised the way a real user hits it rather than being handed a
+      # tidied-up environment.
+      - name: Install iverilog (Windows)
+        if: runner.os == 'Windows'
+        run: choco install iverilog --no-progress -y
+
+      - name: Install the package
+        run: pip install -e ".[dev]"
+
+      - name: The gate actually ran
+        shell: bash
+        run: |
+          python - <<'PY'
+          import sys
+          from dwn2rtl.verify import SimulatorNotFound, find_simulator
+          try:
+              sim = find_simulator()
+          except SimulatorNotFound as e:
+              # Not a skip. conftest.py would quietly skip every gate test from here, and the
+              # run would go green having verified nothing.
+              print('FATAL: no simulator in CI.\n', e)
+              sys.exit(1)
+          print('simulator:', sim.describe())
+          PY
+
+      - name: Tests
+        run: pytest -v
+
+      # Belt and braces. The suite could in principle pass with every `sim` test skipped -- the
+      # step above makes that impossible, and this makes it visible.
+      - name: The gate, on its own
+        run: pytest -m sim -v
+
+      - name: End to end, as a user would
+        shell: bash
+        run: |
+          python - <<'PY'
+          import sys
+          sys.path.insert(0, 'tests')
+          import fixtures, dwn2rtl
+          model, thermometer = fixtures.make_live('n6')
+          dwn2rtl.save(model, thermometer, 'ci-model.dwn', run_name='ci')
+          PY
+          dwn2rtl build ci-model.dwn --out ci-rtl --input-bits 8
+          dwn2rtl verify ci-rtl
+
+  # The wheel is the thing users actually install, and a development install cannot check it:
+  # `pip install -e` leaves the source tree in place, so files('dwn2rtl')/'rtl' resolves back
+  # into the repo and a completely missing package-data block would look perfectly healthy.
+  # See the phase 0 ledger.
+  package:
+    name: the wheel contains the RTL
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - run: pip install build
+      - run: python -m build --wheel
+
+      - name: Install the wheel somewhere with no source tree
+        run: |
+          sudo apt-get update && sudo apt-get install -y iverilog
+          mkdir -p /tmp/elsewhere
+          pip install dist/*.whl
+
+      # Run from a directory that is NOT the repo, so nothing can resolve by accident.
+      - name: Build and verify from the installed wheel alone
+        working-directory: /tmp/elsewhere
+        run: |
+          python - <<'PY'
+          from importlib.resources import files
+          rtl = files('dwn2rtl') / 'rtl'
+          need = ['lut_node.v', 'popcount.v', 'argmax.v', 'pipe_reg.v']
+          missing = [n for n in need if not (rtl / n).is_file()]
+          assert not missing, f'the wheel is missing {missing}'
+          for tb in ['dwn_core_tb.v', 'dwn_top_tb.v']:
+              assert (rtl / 'tb' / tb).read_text().strip(), f'{tb} is empty in the wheel'
+          print('wheel carries', len(need) + 2, 'Verilog files')
+          PY
+          python -c "import sys; sys.path.insert(0, '$GITHUB_WORKSPACE/tests'); import fixtures, dwn2rtl; m,t = fixtures.make_live('tiny'); dwn2rtl.save(m,t,'m.dwn')"
+          dwn2rtl build m.dwn --out rtl --input-bits 8
+          dwn2rtl verify rtl
