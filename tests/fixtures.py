@@ -117,9 +117,11 @@ def make_checkpoint(n_features=4, z=2, layers=(6, 4), n=2, num_classes=2, seed=7
         },
         'state_dict': state_dict,
         'thermometer': {'thresholds': torch.from_numpy(_thresholds(rng, n_features, z))},
-        # Untrained, so this number is meaningless by construction -- it exists because the
-        # emitted header prints it, not because anything depends on it.
-        'results': {'final_acc': 0.0, 'best_acc': 0.0},
+        # NO `results` KEY, deliberately. These models are untrained, so any accuracy here
+        # would be a number invented to fill a field -- and `final_acc: 0.0` reads as "this
+        # model scores zero" rather than "nobody measured". Omitting it also makes the fixture
+        # exercise the case a real user hits constantly: metadata is optional, and everything
+        # downstream has to cope with its absence rather than assume a header value exists.
         'run_name': run_name,
     }
 
@@ -176,6 +178,78 @@ def classes_hit(ck, n_vectors=256, seed=0):
     bits = rng.integers(0, 2, size=(n_vectors, width)).astype(bool)
     y, _ = forward(bits, layers, ck['config']['num_classes'])
     return int(_np.unique(y).size)
+
+
+# ------------------------------------------------------------------------------------------
+# Live objects -- the shapes a user actually saves
+# ------------------------------------------------------------------------------------------
+#
+# These stand in for upstream's torch_dwn classes, which are NOT a dependency of this project
+# and are not installed in CI. What matters for checkpoint.py is only the duck-typing it relies
+# on: state_dict key names, and a module whose class is called GroupSum and which has a `k`.
+# Reproducing that here rather than importing upstream is deliberate -- it keeps the test suite
+# runnable without a training stack, and it pins the exact surface the loader depends on, so an
+# upstream rename shows up as a failure here rather than as a mystery on a user's machine.
+
+
+class _Mapping(torch.nn.Module):
+    """The LearnableMapping submodule -- contributes `<i>.mapping.weights`."""
+
+    def __init__(self, weights):
+        super().__init__()
+        self.weights = torch.nn.Parameter(weights, requires_grad=False)
+
+
+class LUTLayer(torch.nn.Module):
+    def __init__(self, luts, mapping, learnable):
+        super().__init__()
+        self.luts = torch.nn.Parameter(luts, requires_grad=False)
+        if learnable:
+            self.mapping = _Mapping(mapping)
+            # The decoy, under its real name-mangled key. Registered literally because the
+            # mangling that produces it happens inside upstream's class body, not ours.
+            out_size, n = luts.shape[0], int(luts.shape[1]).bit_length() - 1
+            self.register_parameter(
+                '_LUTLayer__dummy_mapping',
+                torch.nn.Parameter(
+                    torch.arange(out_size * n).reshape(out_size, n).int(),
+                    requires_grad=False))
+        else:
+            self.mapping = torch.nn.Parameter(mapping, requires_grad=False)
+
+
+class GroupSum(torch.nn.Module):
+    """Matched by CLASS NAME and the `k` attribute. It has no parameters, which is the entire
+    reason the class count cannot be recovered from a state_dict."""
+
+    def __init__(self, k, tau=1 / 0.3):
+        super().__init__()
+        self.k = k
+        self.tau = tau
+
+
+class Thermometer:
+    """A fitted DistributiveThermometer stand-in: an object with `.thresholds`."""
+
+    def __init__(self, thresholds):
+        self.thresholds = thresholds
+
+
+def make_live(shape='tiny', **overrides):
+    """(model, thermometer) equivalent to make(shape) -- the objects a user holds at the moment
+    training finishes, and what `torch.save({'model':..., 'thermometer':...})` writes."""
+    ck = make(shape, **overrides)
+    sd, cfg = ck['state_dict'], ck['config']
+
+    mods = []
+    for i in range(len(cfg['layers'])):
+        learnable = f'{i}.mapping.weights' in sd
+        mapping = sd[f'{i}.mapping.weights'] if learnable else sd[f'{i}.mapping']
+        mods.append(LUTLayer(sd[f'{i}.luts'], mapping, learnable))
+    mods.append(GroupSum(k=cfg['num_classes']))
+
+    model = torch.nn.Sequential(*mods)
+    return model, Thermometer(ck['thermometer']['thresholds'])
 
 
 def make(shape='tiny', min_classes=2, max_tries=64, **overrides):
