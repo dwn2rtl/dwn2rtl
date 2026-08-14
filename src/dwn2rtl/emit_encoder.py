@@ -61,8 +61,19 @@ def emit_encoder(ck, used, out_path, frac_bits, word):
     L.append('// that training applied a scaler, whatever drives x_flat must apply the same one,')
     L.append('// with the same fitted parameters, before quantizing. Feeding this module raw')
     L.append('// features when the model saw scaled ones produces a design that runs at chance')
-    L.append('// and looks entirely healthy doing it. The checkpoint carries the scaler for this')
-    L.append('// reason.')
+    L.append('// and looks entirely healthy doing it.')
+    # Said concretely or not at all. This block previously ended "The checkpoint carries the
+    # scaler for this reason" -- true of the checkpoint, and false of what dwn2rtl emitted,
+    # which dropped it. A user following that sentence would have found nothing to follow it
+    # with. Now the emitted directory either carries the numbers or says there are none.
+    if ck.get('scaler') and 'mean' in ck['scaler']:
+        L.append('//')
+        L.append('// THIS MODEL WAS TRAINED ON SCALED FEATURES. The parameters are emitted')
+        L.append('// beside this file as input_scaling.json -- apply (x - mean) / scale before')
+        L.append('// quantizing.')
+    else:
+        L.append('//')
+        L.append('// This checkpoint records no scaler, so features arrive in their raw space.')
     L.append('//')
     L.append('// Undriven bits are tied low in the default assignment below. No node reads')
     L.append('// them, so synthesis should remove them entirely; if the LUT count says')

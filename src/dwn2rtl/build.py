@@ -194,6 +194,32 @@ def build(checkpoint, outdir, input_bits=None, pipeline=None, n_random=None, see
     copied, skipped_tb = _copy_package_rtl(outdir)
 
     warnings = []
+
+    # The input contract. Thresholds live in whatever feature space training used, so if that
+    # space was scaled, whatever drives x_flat must apply the SAME scaling with the SAME fitted
+    # parameters before quantizing. Get it wrong and the design runs at chance while looking
+    # entirely healthy -- so the numbers are WRITTEN OUT, not merely mentioned. Telling a user
+    # "apply your scaler" while withholding its parameters is not a warning, it is a riddle.
+    scaler = ck.get('scaler')
+    scaling_path = os.path.join(outdir, 'input_scaling.json')
+    if scaler and 'mean' in scaler:
+        import json
+        with open(scaling_path, 'w') as f:
+            json.dump({'note': 'apply as (x - mean) / scale BEFORE quantizing to the word '
+                               'format below; the model was trained in this space',
+                       'format': str(precision),
+                       'frac_bits': precision.frac_bits,
+                       'word_bits': precision.word_bits,
+                       'mean': scaler['mean'], 'scale': scaler['scale']}, f, indent=2)
+        warnings.append(
+            'this model was trained on SCALED features. Whatever drives x_flat must apply '
+            '(x - mean) / scale first, using input_scaling.json -- raw features give a design '
+            'that runs at chance and looks healthy doing it.')
+    elif scaler:
+        warnings.append(
+            f'the checkpoint carries a scaler this tool did not recognize '
+            f'({scaler.get("unrecognized")}). If training scaled its inputs, whatever drives '
+            'x_flat must apply the same scaling.')
     for name in skipped_tb:
         warnings.append(
             f'{name} is EMPTY in the installed package and was not copied -- that level has no '
@@ -217,6 +243,8 @@ def build(checkpoint, outdir, input_bits=None, pipeline=None, n_random=None, see
                os.path.join(outdir, 'expected.hex'),
                os.path.join(outdir, 'x_quant.hex'),
                os.path.join(outdir, 'expected_top.hex')]
+    if os.path.exists(scaling_path):
+        emitted.append(scaling_path)
 
     return BuildReport(
         outdir=outdir,

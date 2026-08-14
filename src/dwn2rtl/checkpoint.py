@@ -96,6 +96,43 @@ def _thresholds_of(thermometer):
     return t
 
 
+def _scaler_of(obj, n_features):
+    """The input scaling the model was TRAINED with, if the checkpoint records one.
+
+    ⚠️ THIS IS PART OF THE HARDWARE'S INPUT CONTRACT, not metadata. Thresholds live in whatever
+    feature space training used. If that space was standard-scaled, whatever drives x_flat must
+    apply the SAME scaling with the SAME fitted parameters before quantizing -- and if it does
+    not, the design runs at chance while looking entirely healthy doing it.
+
+    Dropping it silently was a real defect, found by testing against a real study-repo
+    checkpoint: JSC carries {'mean', 'scale'} and the normalized form threw it away, while the
+    emitted encoder's own header claimed "the checkpoint carries the scaler for this reason".
+    A user following that instruction would have found nothing to follow it with.
+    """
+    if not isinstance(obj, Mapping):
+        return None
+    raw = obj.get('scaler')
+    if raw is None:
+        return None
+
+    if hasattr(raw, 'mean_') and hasattr(raw, 'scale_'):        # a live sklearn scaler
+        mean, scale = raw.mean_, raw.scale_
+    elif isinstance(raw, Mapping) and 'mean' in raw and 'scale' in raw:
+        mean, scale = raw['mean'], raw['scale']
+    else:
+        # Present but unrecognized. Refusing would reject a checkpoint over something the
+        # hardware does not depend on; ignoring it silently is what caused this defect. Say so.
+        return {'unrecognized': type(raw).__name__}
+
+    mean = np.asarray(mean, dtype=np.float64).ravel()
+    scale = np.asarray(scale, dtype=np.float64).ravel()
+    if mean.size != n_features or scale.size != n_features:
+        raise CheckpointError(
+            f'scaler has {mean.size} means and {scale.size} scales but the model has '
+            f'{n_features} features')
+    return {'mean': mean.tolist(), 'scale': scale.tolist()}
+
+
 def _looks_like_a_state_dict(obj):
     """A mapping of tensors keyed `<layer>.<param>` -- i.e. what torch.save(m.state_dict()) makes."""
     if not isinstance(obj, Mapping) or not obj:
@@ -248,7 +285,7 @@ def _validate(ck):
 # The public surface
 # ---------------------------------------------------------------------------------------
 
-def from_model(model, thermometer, run_name=None, results=None):
+def from_model(model, thermometer, run_name=None, results=None, scaler=None):
     """Build a checkpoint from live objects -- what a user has the moment training ends.
 
     This is the notebook path, and it is what hls4ml does. Everything except the class count is
@@ -276,6 +313,8 @@ def from_model(model, thermometer, run_name=None, results=None):
         'thermometer': {'thresholds': thr},
         'results': dict(results or {}),
         'run_name': run_name or 'unnamed',
+        'scaler': _scaler_of({'scaler': scaler}, int(thr.shape[0])) if scaler is not None
+        else None,
     }
     return _validate(ck)
 
@@ -301,6 +340,9 @@ def normalize(obj, source=None):
             # "not recorded", which is different from zero and must print differently.
             'results': dict(obj.get('results') or {}),
             'run_name': obj.get('run_name') or 'unnamed',
+            # Part of the input contract -- see _scaler_of. None when training used raw
+            # features, which is itself a fact worth carrying rather than an absence.
+            'scaler': _scaler_of(obj, int(_thresholds_of(obj['thermometer']).shape[0])),
         }
         return _validate(ck)
 
@@ -326,8 +368,8 @@ def normalize(obj, source=None):
                 '\n'
                 "  Save the module itself -- torch.save({'model': model, ...}) -- or use\n"
                 '  dwn2rtl.save(model, thermometer, path).')
-        return from_model(model, therm,
-                          run_name=obj.get('run_name'), results=obj.get('results'))
+        return from_model(model, therm, run_name=obj.get('run_name'),
+                          results=obj.get('results'), scaler=obj.get('scaler'))
 
     # 3. The error this module exists for.
     if _looks_like_a_state_dict(obj):
@@ -362,7 +404,7 @@ def load(path):
     return normalize(obj, source=path)
 
 
-def save(model, thermometer, path, run_name=None, results=None):
+def save(model, thermometer, path, run_name=None, results=None, scaler=None):
     """Write a checkpoint from live objects. Sugar over `torch.save`, not a requirement.
 
     A user who would rather not import dwn2rtl in their training script can write the same
@@ -374,7 +416,7 @@ def save(model, thermometer, path, run_name=None, results=None):
     memory and a mistake is one line from being fixed -- rather than at build time, possibly on
     another machine, weeks later.
     """
-    ck = from_model(model, thermometer, run_name=run_name, results=results)
+    ck = from_model(model, thermometer, run_name=run_name, results=results, scaler=scaler)
     torch.save(ck, path)
     return ck
 
