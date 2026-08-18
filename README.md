@@ -54,7 +54,7 @@ verification, which is the part most tools make you take on trust.
 | checkpoint → truth tables, wiring, thresholds | the board harness — UART, vector store, FSM |
 | the thermometer encoder, the LUT core, a top wiring them | design-space sweeps |
 | a numpy golden model | training, tuning, or architecture choice |
-| **self-checking testbenches and golden vectors** | area *models* that predict it — see [why](docs/tool-roadmap.md) |
+| **self-checking testbenches and golden vectors** | area *models* that predict it — see [why](https://github.com/dwn2rtl/dwn2rtl/blob/main/docs/tool-roadmap.md) |
 | optional area from a real synthesis tool, calibrated | vendor toolchains, licences, or a board |
 
 **The encoder always ships, and its cost is always reported separately from the network's.** It
@@ -262,13 +262,13 @@ on every commit.
 
 | | |
 |---|---|
-| [`docs/overview.md`](docs/overview.md) | what the tool is, how it installs, the build plan |
-| [`docs/checkpoint-format.md`](docs/checkpoint-format.md) | what the exporter reads, and why |
-| [`docs/tool-roadmap.md`](docs/tool-roadmap.md) | the audited work list and the decisions behind it |
+| [`docs/overview.md`](https://github.com/dwn2rtl/dwn2rtl/blob/main/docs/overview.md) | what the tool is, how it installs, the build plan |
+| [`docs/checkpoint-format.md`](https://github.com/dwn2rtl/dwn2rtl/blob/main/docs/checkpoint-format.md) | what the exporter reads, and why |
+| [`docs/tool-roadmap.md`](https://github.com/dwn2rtl/dwn2rtl/blob/main/docs/tool-roadmap.md) | the audited work list and the decisions behind it |
 | `docs/phaseN-ledger.md`, `docs/phaseN-report.md` | how it was built, including the wrong turns |
 
 ## Licence
 
-MIT — see [LICENSE](LICENSE).
+MIT — see [LICENSE](https://github.com/dwn2rtl/dwn2rtl/blob/main/LICENSE).
 
 Targets [Alan Bacellar's DWN implementation](https://github.com/alanbacellar/DWN).

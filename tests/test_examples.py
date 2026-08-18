@@ -54,28 +54,51 @@ def test_the_example_output_is_ascii(tmp_path):
     '\n'.join(printed).encode('ascii')
 
 
-def test_readme_links_resolve():
-    """Every repo-relative link in the README must point at a tracked file.
+REPO_BLOB = 'https://github.com/dwn2rtl/dwn2rtl/blob/main/'
 
-    Both defects this test was written after were of exactly this shape and both were in the
-    README's opening: it linked CLAUDE.md, which is gitignored and therefore 404s on GitHub,
-    and it told people to `pip install dwn2rtl`, which does not exist on PyPI. A README is the
-    one document every user reads and the one nothing else checks.
-    """
+
+def _readme_link_targets():
     import re
 
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     readme = open(os.path.join(root, 'README.md'), encoding='utf-8').read()
+    return root, [m.group(1) for m in re.finditer(r'\]\(([^)#][^)]*)\)', readme)]
 
-    targets = [m.group(1) for m in re.finditer(r'\]\(([^)#][^)]*)\)', readme)]
-    local = [t for t in targets if not t.startswith(('http://', 'https://', 'mailto:'))]
-    assert local, 'no local links found -- has the README been rewritten?'
+
+def test_readme_has_no_relative_links():
+    """⚠️ PyPI renders the README as the PROJECT PAGE, where a relative link resolves against
+    pypi.org and 404s.
+
+    The five that were here -- four docs and LICENSE -- worked perfectly on GitHub and would
+    have been dead on the page every new user sees. Nothing about the file looks wrong; the
+    same text is correct in one renderer and broken in the other, which is why this is a test
+    rather than a habit.
+    """
+    _, targets = _readme_link_targets()
+    relative = [t for t in targets if not t.startswith(('http://', 'https://', 'mailto:'))]
+    assert not relative, (
+        f'README links are relative and will 404 on PyPI: {relative}. '
+        f'Prefix them with {REPO_BLOB}')
+
+
+def test_readme_links_into_this_repo_resolve():
+    """Absolute links still have to point at something.
+
+    Making the links absolute fixes PyPI and removes the old safety net: a URL cannot be
+    checked by looking at the filesystem. So the ones aimed back into this repo are mapped to
+    their paths and checked against git, which is what the previous version of this test did --
+    it caught a link to CLAUDE.md, which is gitignored and 404s for everyone else.
+    """
+    root, targets = _readme_link_targets()
+    inward = [t for t in targets if t.startswith(REPO_BLOB)]
+    assert inward, 'no links back into this repo -- has the README been rewritten?'
 
     tracked = subprocess.run(['git', 'ls-files'], cwd=root,
                              capture_output=True, text=True, check=True).stdout.split()
     tracked = {p.replace('/', os.sep) for p in tracked}
 
-    missing = [t for t in local if t.replace('/', os.sep) not in tracked]
+    missing = [t for t in inward
+               if t[len(REPO_BLOB):].replace('/', os.sep) not in tracked]
     assert not missing, f'README links to untracked or missing files: {missing}'
 
 

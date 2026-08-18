@@ -7,6 +7,13 @@ name = "dwn2rtl"
 version = "0.1.0.dev0"
 description = "Turn a trained Differentiable Weightless Neural Network into synthesizable Verilog, and prove the Verilog matches the model"
 readme = "README.md"
+# Names without addresses, deliberately. PyPI renders these on a public, heavily scraped page
+# and a published version's metadata cannot be edited afterwards. Contact goes through Issues,
+# which [project.urls] below links -- add emails here before 1.0 if that proves too indirect.
+authors = [
+    { name = "Krithik Sama" },
+    { name = "Kanishk Sama" },
+]
 # >=3.10 because that is torch's own floor (torch 2.13 declares Requires-Python >=3.10), and a
 # floor this project cannot install is not a floor. It said >=3.9 until phase 2, which was a
 # claim rather than a fact: nothing had ever run there, and `tomllib` -- used by the test that
@@ -28,6 +35,15 @@ dependencies = [
     "numpy>=1.22",
     "torch>=2.0",
 ]
+
+# The PyPI sidebar. Without it the project page has no route back to the source, and the README
+# rendered there is the only thing most visitors ever read. Documentation points at the overview
+# rather than the repo root so the link means something different from Homepage.
+[project.urls]
+Homepage = "https://github.com/dwn2rtl/dwn2rtl"
+Repository = "https://github.com/dwn2rtl/dwn2rtl"
+Issues = "https://github.com/dwn2rtl/dwn2rtl/issues"
+Documentation = "https://github.com/dwn2rtl/dwn2rtl/blob/main/docs/overview.md"
 
 [project.optional-dependencies]
 dev = ["pytest>=7"]
