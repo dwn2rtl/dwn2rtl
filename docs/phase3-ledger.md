@@ -106,10 +106,16 @@ Fixed by making each comment self-contained or citing something real:
 | was | now |
 |---|---|
 | `n=6 is fixed for Phase 1 bring-up (CLAUDE.md)` | the actual constraint: 2\*\*n entries must fit a 64-bit parameter, above which Verilog **truncates silently**, and one node stops being one LUT6 |
-| `confirmed by the Phase 1a probe, docs/reference/probe-results.md` | "measured on Vivado in the dwn-fpga-study repository" — a citation a reader can follow |
+| `confirmed by the Phase 1a probe, docs/reference/probe-results.md` | "measured on Vivado in the research repository" (named, at the time) — a citation a reader could follow |
 | `a Phase 2 sweep axis (brief §10)` | "a build parameter, not a property of the model" |
 | `docs/jsc/dse-plan.md, Group A` | the actual finding: 35 trained configurations showed a learned taper is dominated by a plain layer |
 | `docs/reference/checkpoint-format.md §2/§4` | `dwn2rtl docs/checkpoint-format.md §2/§4` — which exists |
+
+> ⚠️ **Row 2 was superseded on 2026-08-18.** Naming the study repository was the right call *here*
+> — it replaced a dead path with a citation a reader could follow. It was later withdrawn on a
+> different ground: the shipped `rtl/*.v` are copied into every user's output directory, so the
+> citation travelled into projects that have no connection to it. It now reads "confirmed on
+> Vivado". The Phase 3 reasoning was not wrong; a later requirement outranked it.
 
 The technical content was left alone; only provenance changed. **Gate re-run: 30 passed.**
 

@@ -56,9 +56,14 @@ rather than cosmetic. Transferred to a `dwn2rtl` organisation with both as owner
 Publisher and leaving stale URLs frozen in already-released metadata. Before the first release it
 costs nothing. `github.com/dwn2rtl/dwn2rtl`.
 
-**Decided: the study repo stays where it is.** `Kanishk234/dwn-fpga-study` was already public —
+**Decided: the earlier research repository stays where it is.** It was already public —
 checked rather than assumed, with a control — so the README's evidence link already resolved and
 the planned conversion from link to citation was dropped as unnecessary work.
+
+> ⚠️ **Reversed on 2026-08-18.** The link was removed after all, and the repository name with it:
+> the tool and its docs are now required to stand alone, so the README states the evidence as this
+> project's own history and rests it on what its test suite pins. The reasoning above was sound on
+> its own terms — the link did resolve — but standing alone outranked saving the work.
 
 ## 3. ⚠️ Hit — CI broke, and it took three wrong diagnoses to find out why
 
