@@ -62,10 +62,16 @@ jobs:
       # after apt's DEFAULT 120-SECOND TIMEOUT, and only then does the mirrorlist fall back to
       # archive.ubuntu.com, which works. The wait is the timeout, not a lock and not yosys.
       #
-      # ⚠️ ~~Acquire::Retries=3~~ -- WITHDRAWN, it made this strictly worse. Retries multiply a
-      # dead mirror: the log showed each item attempted four times at 120s apiece. The fix for a
-      # host that will never answer is to STOP WAITING SOONER, not to ask it again. Short
-      # timeouts let the fallback mirror take over in seconds.
+      # ⚠️ ~~Acquire::Retries=3~~ -- withdrawn as a no-op, and ~~"my retries flag caused the four
+      # attempts"~~ was wrong: a run WITHOUT the flag showed the same four. Ubuntu 24.04 defaults
+      # Acquire::Retries to 3, so the retries were never ours to remove.
+      #
+      # ⚠️ ~~Short timeouts are the fix~~ -- withdrawn too. Measured: with 10s timeouts the step
+      # still ran 15 minutes and timed out. Shrinking each attempt does not help when EVERY index
+      # item pays its own retry cycle against the dead host first. So do not tune the waiting --
+      # REMOVE THE DEAD MIRROR. The runner's /etc/apt/apt-mirrors.txt lists azure first and apt
+      # falls back to archive.ubuntu.com only after exhausting it; pointing that file at the
+      # working mirror skips the whole storm. Timeouts stay as cheap insurance.
       #
       # DPkg::Lock::Timeout is kept as cheap insurance against the lock contention that was the
       # first hypothesis -- it costs nothing when the lock is free. NEEDRESTART_MODE stops
@@ -79,20 +85,68 @@ jobs:
           DEBIAN_FRONTEND: noninteractive
           NEEDRESTART_MODE: a
         run: |
+          set -x
+          # The mirrorlist the runner ships puts the unreachable azure mirror first. Replace it
+          # with the mirror apt already falls back to and succeeds on -- see the Hit:/Get: lines
+          # for archive.ubuntu.com in any of the slow runs.
+          if [ -f /etc/apt/apt-mirrors.txt ]; then
+            cat /etc/apt/apt-mirrors.txt
+            echo 'https://archive.ubuntu.com/ubuntu/' | sudo tee /etc/apt/apt-mirrors.txt
+          fi
           sudo apt-get update \
-            -o Acquire::http::Timeout=10 -o Acquire::https::Timeout=10
+            -o Acquire::http::Timeout=15 -o Acquire::https::Timeout=15
           sudo apt-get install -y -o DPkg::Lock::Timeout=600 \
-            -o Acquire::http::Timeout=10 -o Acquire::https::Timeout=10 \
+            -o Acquire::http::Timeout=15 -o Acquire::https::Timeout=15 \
             iverilog yosys
+          iverilog -V | head -1
+          yosys -V
 
       # winget is not available on GitHub's Windows runners; Chocolatey is preinstalled.
       # Whichever installer is used, note that it does NOT put iverilog on PATH -- see the
       # phase 0 ledger. verify.py searches C:\iverilog\bin for exactly this reason, so the
       # tool is being exercised the way a real user hits it rather than being handed a
       # tidied-up environment.
+      # ⚠️ choco CAN EXIT 0 HAVING INSTALLED NOTHING -- observed, not theorised: a run reached
+      # "The gate actually ran" with no simulator anywhere, which means this step reported
+      # success. The community feed also rate-limits, and Actions runners share IPs, so a
+      # transient failure here is expected occasionally.
+      #
+      # Retries ARE right here and were WRONG for the apt mirror above, which is worth keeping
+      # straight: a rate limit clears, so asking again works; an unreachable host does not, so
+      # asking again just multiplies the timeout.
+      #
+      # The check afterwards is the same rule as the Linux "estimate tests can actually run"
+      # step -- an install that achieved nothing must fail AT THE INSTALL, naming where it
+      # looked, rather than surfacing three steps later as a mystery.
+      #
+      # ⚠️ It deliberately does NOT add iverilog to PATH. verify.py's fallback search IS the
+      # Windows user's path (winget installs to C:\iverilog\bin and adds nothing to PATH), so
+      # handing CI a tidied-up environment would stop exercising the code real users hit.
       - name: Install iverilog (Windows)
         if: runner.os == 'Windows'
-        run: choco install iverilog --no-progress -y
+        shell: pwsh
+        timeout-minutes: 15
+        run: |
+          for ($i = 1; $i -le 3; $i++) {
+            choco install iverilog --no-progress -y
+            if ($LASTEXITCODE -eq 0) { break }
+            Write-Host "choco attempt $i exited $LASTEXITCODE; retrying"
+            Start-Sleep -Seconds 20
+          }
+          $dirs = @('C:\iverilog\bin',
+                    'C:\Program Files\iverilog\bin',
+                    'C:\Program Files (x86)\iverilog\bin')
+          $found = @($dirs | Where-Object { Test-Path (Join-Path $_ 'iverilog.exe') })
+          if ($found.Count -eq 0) {
+            Write-Host 'FATAL: choco reported success but there is no iverilog.exe. Looked in:'
+            $dirs | ForEach-Object { Write-Host "  $_" }
+            Write-Host '--- what chocolatey thinks it installed ---'
+            try { choco list } catch { Write-Host "(choco list failed: $_)" }
+            Write-Host '--- C:\ ---'
+            Get-ChildItem 'C:\' -Name
+            exit 1
+          }
+          Write-Host "iverilog found at $($found[0]) -- left off PATH on purpose"
 
       - name: Install the package
         run: pip install -e ".[dev]"
