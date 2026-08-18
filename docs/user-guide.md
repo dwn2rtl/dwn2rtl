@@ -143,7 +143,7 @@ plain Windows box. It does not matter here.)
 
 Accepted shapes: `{'model': ..., 'thermometer': ...}`, a live model via
 `dwn2rtl.from_model(model, thermometer)`, and the `{'state_dict', 'thermometer', 'config'}` form
-the study repo writes. See
+an upstream training script may write. See
 [checkpoint-format.md](https://github.com/dwn2rtl/dwn2rtl/blob/main/docs/checkpoint-format.md).
 
 ---
@@ -219,8 +219,8 @@ Three things to get right:
    it is a fixed-latency pipeline. Set a `PIPE_*` to 0 to remove that stage if you are chasing
    latency rather than clock rate, then re-run `verify`.
 3. **`class_idx`** is `ceil(log2(num_classes))` bits — 4 bits for 10 classes. Do not hardcode a
-   width; read `IDX_W` from `top_params.vh`. (The study repo hardcoded 3, which left a 10-class
-   design checked on 3 of its 4 index bits — and passing.)
+   width; read `IDX_W` from `top_params.vh`. (An earlier testbench of ours hardcoded 3, which left a
+   10-class design checked on 3 of its 4 index bits — and passing.)
 
 ### ⚠️ The scaling contract
 
@@ -331,7 +331,7 @@ yosys 0.68+64
 
 **This is an estimate from generic mapping, not your vendor toolchain**, and the tool says so
 every time it prints. That caveat is not a disclaimer — it is a measurement. The same design has
-real Vivado figures in the study repo, so the estimator was calibrated against them before it was
+real Vivado figures for this design, so the estimator was calibrated against them before it was
 trusted with anything:
 
 | module | yosys | Vivado, `xc7a35t` | |

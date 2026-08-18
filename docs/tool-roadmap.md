@@ -29,12 +29,12 @@
 another person could use on their own model, with each item marked by *when* it should happen
 relative to the MNIST port.
 
-**How it differs from the two docs beside it.** `docs/reference/reusable-generator.md` *(study repo)* argues *whether* to
-build the tool and scopes it in weeks. `docs/mnist/plan.md` *(study repo)* covers what MNIST specifically needs.
+**How it differs from the two docs beside it.** `docs/reference/reusable-generator.md` *(not in this repo)* argues *whether* to
+build the tool and scopes it in weeks. `docs/mnist/plan.md` *(not in this repo)* covers what MNIST specifically needs.
 This is the union, audited against the code as it stands, with file and line references so nothing
 here is a guess. Where the three disagree, this one was checked most recently.
 
-**Identifiers.** `B*`, `F*`, `R*` and `T*` are `docs/mnist/plan.md` *(study repo)* §2's; `M1a`–`M1g` are its §3
+**Identifiers.** `B*`, `F*`, `R*` and `T*` are `docs/mnist/plan.md` *(not in this repo)* §2's; `M1a`–`M1g` are its §3
 steps. Items that already have an ID there keep it — this document does not invent a second name
 for the same thing. `B4`, and the `V*`/`P*`/`Q*` groups below, are new here because no existing ID
 covers them.
@@ -48,7 +48,7 @@ covers them.
 | **AFTER** | packaging and polish. Real work, but it should follow a generator that has stopped moving. |
 | **ANYTIME** | independent of MNIST; costs little and unblocks thinking. |
 
-**The organising principle**, from `docs/mnist/plan.md` *(study repo)* §1.3, and worth repeating because it is the
+**The organising principle**, from `docs/mnist/plan.md` *(not in this repo)* §1.3, and worth repeating because it is the
 test that decides most of these calls:
 
 > *Would this still be right for a dataset we have not thought of?* Not: *does this work for MNIST?*
@@ -64,8 +64,8 @@ These are not generalisations. They are bugs that JSC's particular shape hides, 
 |---|---|---|---|---|---|
 | ~~**B1**~~ ✅ **done 2026-08-11** (`fbc3be8`) | Feature count hardcoded in the core emitter: `input_bits = 16 * cfg['thermometer_bits']` | `rtlgen/emit_core.py:97` | Emits a core with the wrong input width for any non-16-feature model. No error — Gate 1 fails confusingly, one level away from the cause. **`rtlgen/emit_encoder.py:41` and `tb/gen_vectors.py:74` already derive it correctly** (`thresholds.shape[0]`), so this is one file disagreeing with the two beside it | **BEFORE** | 30 min |
 | **R1** | Area model is JSC-calibrated and self-tests at five classes | `dse/area_model.py:39,48,87,168,183` | `predict()` now *takes* `features` and `num_classes`, so the shape is parameterised — what remains is the `JSC_FEATURES` default and the **calibration constants**, which are the part that is actually wrong for another dataset. Nothing in the Gate 1 path reads it, so it blocks *predicting* MNIST area, not measuring it | **DURING** — and see R3, which decides whether a corrected R1 can be right at all | 1 h |
-| **R2** | Grid is JSC-shaped throughout — size ladder, `tau` anchors, slugs, `NUM_CLASSES = 5` | `dse/grid.py:41,59,95` | ~~Not a defect in the emitter~~ — but as of 2026-08-12 it is **blocking MNIST Phase 2** (`docs/mnist/phase2-ledger.md` *(study repo)* M2c). `dse/run.py` resolves a checkpoint *by grid slug*, so no MNIST slug exists and `--all` finds nothing to run | ⬅ **NOW**, promoted from AFTER | 2–3 h |
-| **R3** 🆕 | **There is no live encoder cost model** | `docs/mnist/phase1-ledger.md` *(study repo)*, the 2026-08-11 retraction | Two hypotheses have now died: `features × z` comparators (the paper's MNIST config was projected at ~67,000 encoder LUTs and is really far less, because the **learned mapping only builds comparators for bits it picks** — 720 of 2,352 on the board model), and the amortisation explanation for LUTs-per-comparator. **R1 cannot be made correct until one replaces them**, and the tool's area reporting depends on it | **DURING** | 3 synthesis runs |
+| **R2** | Grid is JSC-shaped throughout — size ladder, `tau` anchors, slugs, `NUM_CLASSES = 5` | `dse/grid.py:41,59,95` | ~~Not a defect in the emitter~~ — but as of 2026-08-12 it is **blocking MNIST Phase 2** (`docs/mnist/phase2-ledger.md` *(not in this repo)* M2c). `dse/run.py` resolves a checkpoint *by grid slug*, so no MNIST slug exists and `--all` finds nothing to run | ⬅ **NOW**, promoted from AFTER | 2–3 h |
+| **R3** 🆕 | **There is no live encoder cost model** | `docs/mnist/phase1-ledger.md` *(not in this repo)*, the 2026-08-11 retraction | Two hypotheses have now died: `features × z` comparators (the paper's MNIST config was projected at ~67,000 encoder LUTs and is really far less, because the **learned mapping only builds comparators for bits it picks** — 720 of 2,352 on the board model), and the amortisation explanation for LUTs-per-comparator. **R1 cannot be made correct until one replaces them**, and the tool's area reporting depends on it | **DURING** | 3 synthesis runs |
 
 > **Status note, 2026-08-12.** **Every BEFORE item is done.** B1, B4 and F1 all landed, and the
 > descriptor work went considerably further than B4 described (below). JSC reproduces exactly:
@@ -104,7 +104,7 @@ Real work, no current failure. Ordered by whether MNIST is blocked without them.
 **F1 was the one that decided whether MNIST fits at all**, and it delivered: MNIST runs at
 **Q0.8, a 9-bit word**, and the format turned out to be *lossless on the full test set* —
 0 of 10,000 predictions differ from float32 despite 56,835 values saturating, because 8-bit pixels
-have only 256 distinct values. `docs/jsc/report.md` *(study repo)* §7's JSC finding (11-bit gives a 5.80× smaller encoder
+have only 256 distinct values. `docs/jsc/report.md` *(not in this repo)* §7's JSC finding (11-bit gives a 5.80× smaller encoder
 for 0.142 pp) generalised, and then some.
 
 ⚠️ **And it moved the headline constraint.** Phase 1 projected the paper's `2x[1000,500]` at
@@ -131,7 +131,7 @@ These cannot be decided by inspection. Attempting them earlier means guessing.
 | ~~Are MNIST pixels standard-scaled or min-max?~~ | ✅ **min-max, [0,1]**, via `transforms.ToTensor()`. No scaler in the pipeline |
 | ~~Does the upstream MNIST recipe binarise differently?~~ | ✅ **No.** Same `DistributiveThermometer`, `feature_wise=True` |
 | ~~Does the paper's `1000, 500` fit at any precision?~~ | ✅ **BUILT 2026-08-12, and it fits at 9-bit.** `2x[1000,500]`: 97.76%, **3,464 LUTs (16.65%)**, 103.8 MHz — the best MNIST design that meets the board clock. The 11-bit projection was unnecessarily pessimistic |
-| ~~Why is LUTs-per-comparator lower on real data than synthetic?~~ | ✅ **Settled 2026-08-13: TWO mechanisms, previously conflated.** *Within* a dataset it is logic sharing — cost per comparator falls monotonically as comparators-per-feature rises (0.218 → 0.086 LUT/bit over three measured points). *Between* datasets that fails to explain it, since JSC has the most comparators per feature and is still dearest, leaving threshold **values** as the cross-dataset mechanism. See `docs/mnist/phase2-ledger.md` *(study repo)* |
+| ~~Why is LUTs-per-comparator lower on real data than synthetic?~~ | ✅ **Settled 2026-08-13: TWO mechanisms, previously conflated.** *Within* a dataset it is logic sharing — cost per comparator falls monotonically as comparators-per-feature rises (0.218 → 0.086 LUT/bit over three measured points). *Between* datasets that fails to explain it, since JSC has the most comparators per feature and is still dearest, leaving threshold **values** as the cross-dataset mechanism. See `docs/mnist/phase2-ledger.md` *(not in this repo)* |
 
 **The most valuable output of MNIST is a list of bugs**, not an accuracy number — and it delivered.
 Beyond the four JSC-shaped assumptions Phase 2 and 3 found, MNIST produced **seven more** in one
@@ -165,11 +165,11 @@ n=2 and n=4 without a trained model. It also makes `verify()` fully self-contain
 **On V4 — this is the design question the tool turns on.** Precision splits cleanly:
 
 - **integer bits** — derivable exactly from the checkpoint's thresholds, and the *renormalisation*
-  trick in `docs/jsc/report.md` *(study repo)* §7 removes the question entirely: map each feature affinely into [−1, 1) and
+  trick in `docs/jsc/report.md` *(not in this repo)* §7 removes the question entirely: map each feature affinely into [−1, 1) and
   the integer width is 1 for every dataset, forever, with no retraining because a comparison is
   unchanged by a monotonic rescale applied to both sides.
 - **fractional bits** — **not** derivable from the checkpoint. Whether quantisation changes
-  predictions depends on the data. `docs/jsc/report.md` *(study repo)* §5.6's scar applies directly: the encoder-narrowing
+  predictions depends on the data. `docs/jsc/report.md` *(not in this repo)* §5.6's scar applies directly: the encoder-narrowing
   result was fitted and validated on the same 1,000 samples, and 8 of 15 features were narrowed too
   far. A tool that picks fractional width from a checkpoint-only heuristic reproduces that bug for
   every user.
@@ -181,7 +181,7 @@ So the honest contract: **derive a floor from the checkpoint and say it is a flo
 
 ## 5. Packaging — **AFTER**
 
-Only start once the generator has stopped changing. `docs/reference/reusable-generator.md` *(study repo)* §5 gives the
+Only start once the generator has stopped changing. `docs/reference/reusable-generator.md` *(not in this repo)* §5 gives the
 reason: maintaining a fork while the emitters move means merging every change twice.
 
 | # | Item | Notes | Effort |
@@ -273,7 +273,7 @@ Free to answer, and each one narrows what the work above actually is.
 
 | # | Decision | Why it matters now |
 |---|---|---|
-| ~~**Q1**~~ | ✅ **RESOLVED 2026-08-11: the TOOL is generator-only.** It emits synthesizable Verilog for the network and nothing around it; users bring their own harness, as hls4ml does. **B2 and B3 are therefore not tool work.** ⚠️ This does **not** decide whether MNIST runs on our own board in this repo — that is a separate question, still open, tracked in `docs/mnist/phase1-ledger.md` *(study repo)*. If the answer is yes, B2 and B3 happen for the demo without becoming part of the tool |
+| ~~**Q1**~~ | ✅ **RESOLVED 2026-08-11: the TOOL is generator-only.** It emits synthesizable Verilog for the network and nothing around it; users bring their own harness, as hls4ml does. **B2 and B3 are therefore not tool work.** ⚠️ This does **not** decide whether MNIST runs on our own board in this repo — that is a separate question, still open, tracked in `docs/mnist/phase1-ledger.md` *(not in this repo)*. If the answer is yes, B2 and B3 happen for the demo without becoming part of the tool |
 | ~~**Q2**~~ | ✅ **RESOLVED 2026-08-11: yes, Gate 1 ships.** A generator whose output nobody can check is worth much less, and this repo has the evidence — the emitter's own read-back check reported 20/20 correct while the design was wrong on 958 of 1,504 vectors |
 | **Q3** | **Which upstream DWN versions?** (P6) | One pinned commit is honest and cheap; a range needs a compatibility layer plus silent-drift detection |
 | **Q4** | **Name, and where it lives** | `mnist/plan.md` §1.6 forbids branch- or person-named files; the same discipline should apply to the fork |
@@ -353,7 +353,7 @@ measuring at all once the argument is made.
 
 **The tool never asks for fractional bits, and never silently picks one.** ⚠️ And a measured
 bit-error on the tool's own random vectors must not be reported as a guarantee:
-`docs/jsc/report.md` *(study repo)* §5.6 records this project fitting *and* validating an encoder narrowing on the
+`docs/jsc/report.md` *(not in this repo)* §5.6 records this project fitting *and* validating an encoder narrowing on the
 same 1,000 samples, and 8 of 15 features coming out too narrow as a result.
 
 **Q1 was the highest-leverage question in this document, and it is now answered: generator-only.**
@@ -369,7 +369,7 @@ about it. It needs documenting rather than building.
 
 **The encoder always ships, and its area is always reported separately.** Thermometer encoding is
 not preprocessing a user can supply — it is intrinsic to a DWN, and on the smallest JSC model it is
-fourteen times the network it feeds. `docs/jsc/report.md` *(study repo)* §5.2 criticises published work for reporting
+fourteen times the network it feeds. `docs/jsc/report.md` *(not in this repo)* §5.2 criticises published work for reporting
 core-only LUT counts; a tool of ours that emitted the network and left the encoder to the user
 would commit exactly that error, and hand users a number that understates their design by most of
 its cost.
@@ -384,18 +384,18 @@ correct. It belongs in the tool's README as evidence, not as a feature.
 
 Recorded so they are not silently reconsidered:
 
-- **Adopting the encoder narrowing for JSC.** `docs/jsc/report.md` *(study repo)* §7 argues against it — the binding
+- **Adopting the encoder narrowing for JSC.** `docs/jsc/report.md` *(not in this repo)* §7 argues against it — the binding
   constraint on this device is timing, and the encoder is not on the critical path. F1 makes it
   *possible*; it should not become the default.
 - **Learnable Reduction.** ~~Never explored enough to belong in a tool.~~ **Now explored, and the
-  answer is still no** — `docs/mnist/reduction-ledger.md` *(study repo)*, 35 trained configurations. A learned
+  answer is still no** — `docs/mnist/reduction-ledger.md` *(not in this repo)*, 35 trained configurations. A learned
   taper genuinely works (**+3.69 pp** over a plain narrow layer at the same group size) and is
   **dominated anyway**: `1x500` reaches 97.70% with 500 nodes and the identical 500-bit popcount
   that the best taper spends 2,800 nodes to reach 97.43% with. ⚠️ One exception, worth a line in
   the tool's docs rather than a feature: a **mild** 2:1 taper (`2x[2000,1000]`) is the best model
-  in the study with half the adder tree. So the tool should keep emitting `GroupSum` and say
+  in earlier work with half the adder tree. So the tool should keep emitting `GroupSum` and say
   nothing about pyramids.
-- **Reorganising the JSC artifacts.** `mnist/plan.md` §1.4 — `docs/jsc/report.md` *(study repo)* and the `jsc-complete`
+- **Reorganising the JSC artifacts.** `mnist/plan.md` §1.4 — `docs/jsc/report.md` *(not in this repo)* and the `jsc-complete`
   tag reference current paths.
 - 🆕 **Running the emitted RTL back through yosys and shipping *that* Verilog.** Measured
   2026-08-14 and recorded here because it is an obvious-sounding idea that will be suggested
@@ -418,7 +418,7 @@ Recorded so they are not silently reconsidered:
   reviewability, including the emitters' own read-back checks, which parse the emitted text; and
   it hands the vendor tool pre-flattened anonymous logic instead of structure. On that last
   point — Vivado maps comparators to carry chains at 7.5 LUTs each where yosys uses 3.5 generic
-  LUTs. That is **two architectures, not one tool being smarter**, and the study found timing
+  LUTs. That is **two architectures, not one tool being smarter**, and we found timing
   rather than area was binding.
 
   **When it would be legitimate:** targeting a flow that cannot synthesize behavioral Verilog, or
@@ -448,7 +448,7 @@ DONE      B1  hardcoded feature count            ✅ 2026-08-11 (fbc3be8)
 NOW       R2  make dse/ dataset-aware            ⬅ promoted from AFTER. MNIST Phase 2 (M2c)
                                                     cannot run without it, and it is the only
                                                     remaining item on BOTH the tool's path and
-                                                    the study's
+                                                    earlier
           R3  find an encoder cost model         ⬅ 3 synthesis runs. R1 cannot be made correct
                                                     before it, and the tool reports area
           R1  fix area_model's calibration       ⬅ after R3, not before
@@ -463,17 +463,17 @@ OPEN      Q3  upstream-version policy
 ```
 
 **Rough total:** ~half a day for R1–R3, one to two weeks for AFTER — consistent with
-`docs/reference/reusable-generator.md` *(study repo)* §4, and still "almost none of it RTL". The estimate did not move;
+`docs/reference/reusable-generator.md` *(not in this repo)* §4, and still "almost none of it RTL". The estimate did not move;
 what moved is that the *before* column is empty.
 
 ---
 
 ## 9. Pointers
 
-- `docs/mnist/plan.md` *(study repo)* — ground rules for the branch, and the JSC-must-not-break gate
-- `docs/mnist/phase1-ledger.md` *(study repo)* — the dated log for the port, and where every ✅ above is evidenced
-- `docs/mnist/phase2-ledger.md` *(study repo)* — the sweep, and M2c, which is R2 under another name
-- `docs/mnist/reduction-ledger.md` *(study repo)* — why Learnable Reduction stays out of scope (§7)
-- `docs/reference/reusable-generator.md` *(study repo)* — whether to build the tool at all, and how to split it off
-- `docs/jsc/report.md` *(study repo)* §7 — the precision measurement F1 exists to expose
+- `docs/mnist/plan.md` *(not in this repo)* — ground rules for the branch, and the JSC-must-not-break gate
+- `docs/mnist/phase1-ledger.md` *(not in this repo)* — the dated log for the port, and where every ✅ above is evidenced
+- `docs/mnist/phase2-ledger.md` *(not in this repo)* — the sweep, and M2c, which is R2 under another name
+- `docs/mnist/reduction-ledger.md` *(not in this repo)* — why Learnable Reduction stays out of scope (§7)
+- `docs/reference/reusable-generator.md` *(not in this repo)* — whether to build the tool at all, and how to split it off
+- `docs/jsc/report.md` *(not in this repo)* §7 — the precision measurement F1 exists to expose
 - `docs/checkpoint-format.md` — what the exporter reads, verified against JSC only (M4)

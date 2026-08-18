@@ -202,8 +202,8 @@ The board, the clock, the I/O and the synthesis strategy are the user's, by deci
 
 The only structural generation anywhere in the project is a **CI test fixture** — a synthetic
 checkpoint of a chosen shape, used to test the emitter at shapes we have no real model for. It is
-test-only and never on a user's path. It earns its place: in the study repo it caught emitter bugs
-at MNIST's shape before any MNIST model existed.
+test-only and never on a user's path. It earns its place: it caught emitter bugs at MNIST's shape
+before any MNIST model existed.
 
 ---
 
@@ -240,14 +240,14 @@ golden model.
 ### Phase 4, and the rule it is organised around
 
 **No optimization lands on an argument. It lands on a measurement, or it does not land.** That is
-this project's own scar, not a borrowed principle: the study repo built an area model to filter
+this project's own scar, not a borrowed principle: an earlier area model was built to filter
 configurations too large to synthesize, and across two completed studies it filtered **zero**
 (`tool-roadmap.md` Q7). So `estimate` comes *before* any RTL change — altering the emitter before
 there is a way to tell whether it helped is the same mistake in a different costume.
 
 ⚠️ **And the risk that could make the phase harmful:** yosys is not the tool users synthesize
 with. Tuning the emitter until *yosys* numbers improve would optimize against the wrong target.
-Hence two guards — calibrate against the study's real Vivado figures before changing anything,
+Hence two guards — calibrate against real Vivado figures before changing anything,
 and justify every change **structurally** first, using measurement only to confirm it cost
 nothing.
 

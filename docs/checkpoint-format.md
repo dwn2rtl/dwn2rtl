@@ -21,9 +21,8 @@ Files read: `src/torch_dwn/lut_layer.py`, `src/torch_dwn/mapping.py`, `src/torch
 
 ### Re-verified independently, 2026-08-13
 
-This project inherited the document from the study repository, and `tool-handoff.md` §9 asks
-that the pin not be taken on trust: *"Pin it here independently — do not assume the study repo's
-pin, and re-read `docs/checkpoint-format.md` against whatever commit this project pins."*
+This document predates the split into a standalone tool, and the pin was deliberately not taken
+on trust: it was re-established here independently rather than carried forward.
 
 Done. Each load-bearing claim was checked against the source again rather than carried forward:
 

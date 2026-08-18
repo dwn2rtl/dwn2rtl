@@ -137,7 +137,7 @@ backpressure. The board, clock, I/O and synthesis strategy are yours.
 > vectors. See [the user guide](https://github.com/dwn2rtl/dwn2rtl/blob/main/docs/user-guide.md).
 
 **The encoder always ships, and its cost is always reported separately from the network's.** It is
-intrinsic to a DWN, not preprocessing you supply, and on the smallest model in the study below it
+intrinsic to a DWN, not preprocessing you supply, and on the smallest model we have measured it
 was **fourteen times** the network it feeds. Published DWN resource counts that omit it understate
 designs by most of their cost.
 
@@ -171,17 +171,16 @@ guide](https://github.com/dwn2rtl/dwn2rtl/blob/main/docs/user-guide.md).
 
 ## Evidence
 
-The generator here comes from the study repository
-**[dwn-fpga-study](https://github.com/Kanishk234/dwn-fpga-study)**, where it built:
+Before it was packaged as a tool, this generator was used to run a full FPGA study. It built:
 
 - **77 configurations** across two datasets, **every one bit-exact** against its software model
 - **166,000 / 166,000** and **10,000 / 10,000** correct **on physical silicon**, one model per
   dataset
 - the original authors' published area and accuracy, reproduced at matched convention
 
-That study is the evidence this works; this repository is the tool. Numbers it recorded — both
-datasets' fixed-point formats, comparator counts, and quantisation-merge counts — are reproduced
-exactly by this code and pinned by its test suite.
+Every number that study recorded — both datasets' fixed-point formats, comparator counts, and
+quantisation-merge counts — is reproduced exactly by the code in this repository and pinned by its
+test suite, so the claim is checkable here rather than taken on trust.
 
 ## Documentation
 
@@ -190,7 +189,6 @@ exactly by this code and pinned by its test suite.
 | [`docs/user-guide.md`](https://github.com/dwn2rtl/dwn2rtl/blob/main/docs/user-guide.md) | **start here** — using it on your own model: saving, integrating the RTL, troubleshooting |
 | [`docs/checkpoint-format.md`](https://github.com/dwn2rtl/dwn2rtl/blob/main/docs/checkpoint-format.md) | what the exporter reads, and why |
 | [`docs/overview.md`](https://github.com/dwn2rtl/dwn2rtl/blob/main/docs/overview.md) | what the tool is, how it installs, the build plan |
-| [`docs/tool-roadmap.md`](https://github.com/dwn2rtl/dwn2rtl/blob/main/docs/tool-roadmap.md) | the audited work list and the decisions behind it |
 
 ## Development
 
@@ -201,9 +199,13 @@ pytest -m sim           # the gate: emitted RTL through a simulator
 ```
 
 **The gate is the rule**: emitted RTL is not correct until a simulator says it matches the golden
-model on *every* vector. Not "looks right", and not "the emitter's own read-back passed" — the
-study repo has a case where a read-back reported 20/20 correct while the design was wrong on 958
-of 1,504 vectors. It runs in CI on Linux and Windows on every commit.
+model on *every* vector. Not "looks right", and not "the emitter's own read-back passed" — we
+have a recorded case where a read-back reported 20/20 correct while the design was wrong on 958 of
+1,504 vectors. It runs in CI on Linux and Windows on every commit.
+
+`docs/phaseN-ledger.md` and `phaseN-report.md` record how the tool was built, including the wrong
+turns; [`docs/tool-roadmap.md`](https://github.com/dwn2rtl/dwn2rtl/blob/main/docs/tool-roadmap.md)
+is the archived work list that shaped it. Both are history, not instructions.
 
 ## Licence
 
