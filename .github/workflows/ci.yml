@@ -243,8 +243,17 @@ jobs:
       - run: python -m build --wheel
 
       - name: Install the wheel somewhere with no source tree
+        timeout-minutes: 15
+        env:
+          DEBIAN_FRONTEND: noninteractive
         run: |
-          sudo apt-get update && sudo apt-get install -y iverilog
+          # Same mirror override as the test job -- this step had the identical exposure to the
+          # unreachable azure mirror and had simply not drawn it yet.
+          if [ -f /etc/apt/apt-mirrors.txt ]; then
+            echo 'https://archive.ubuntu.com/ubuntu/' | sudo tee /etc/apt/apt-mirrors.txt
+          fi
+          sudo apt-get update -o Acquire::http::Timeout=15 -o Acquire::https::Timeout=15
+          sudo apt-get install -y -o DPkg::Lock::Timeout=600 iverilog
           mkdir -p /tmp/elsewhere
           pip install dist/*.whl
 
