@@ -48,8 +48,38 @@ module argmax #(
     // Depth is ceil(log2(K)) rather than the K-1 of a sequential scan. Odd entries CARRY
     // FORWARD instead of pairing against padding: a carry is a rename, padding is a
     // compare-select that exists only to be discarded.
+    // ⚠️ THE WAIVER BELOW IS A MEASURED FALSE POSITIVE, NOT A SILENCED BUG.
+    //
+    // ⚠️ NOTE FOR EDITORS: never begin a comment line with the word "verilator". It is taken as
+    // a PRAGMA, and prose after it is rejected as an unknown one -- an ERROR that stops linting
+    // while iverilog still prints PASS, so the gate would not catch it. That happened while
+    // writing this very comment.
+    //
+    // UNOPTFLAT -- "circular combinational logic" -- is reported on these two arrays, and by
+    // default it is FATAL, so a user linting an emitted design would be told their hardware has
+    // a combinational loop. It does not: lvl_*[l+1] reads only lvl_*[l], so the level index
+    // strictly increases and the graph is a DAG.
+    //
+    // The cause is that dependency analysis is per-SIGNAL, and one signal here holds every
+    // level, so level l+1 depending on level l looks like the array depending on itself. Proven
+    // with a control rather than argued: a plain adder tree of the same shape -- provably
+    // acyclic, nothing but `+` -- raises the identical warning on the identical declaration
+    // line. A packed vector instead of an unpacked array raises it too, so the granularity is
+    // the cause, not the declaration style.
+    //
+    // Why waive rather than restructure into per-level signals: the only cost of UNOPTFLAT is
+    // that Verilator evaluates the block iteratively, and that cost is unmeasurable here --
+    // 0.04-0.07 s for 519 vectors, the same as iverilog on the same design. Rewriting logic
+    // that is bit-exact under two simulators and maps to the vendor's exact LUT count, to buy
+    // nothing measurable, is the trade this project already declined twice in phase 4.
+    //
+    // The pragma is a comment to every other tool -- iverilog, yosys and vendor flows ignore
+    // it -- so it costs no vendor neutrality. Verified: both levels still PASS under iverilog
+    // AND Verilator with it in place.
+    /* verilator lint_off UNOPTFLAT */
     wire [W-1:0]  lvl_score [0:LEVELS][0:K-1];
     wire [IW-1:0] lvl_index [0:LEVELS][0:K-1];
+    /* verilator lint_on UNOPTFLAT */
 
     genvar l, i;
     generate
