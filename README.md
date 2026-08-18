@@ -42,13 +42,15 @@ That is a real MNIST model, not an illustration. No flags, no config file, no ve
 
 ## Try it in ten seconds
 
-```bash
-python examples/quickstart.py
-```
+[`examples/quickstart.py`](https://github.com/dwn2rtl/dwn2rtl/blob/main/examples/quickstart.py) is
+one file with no dataset and no training: it builds a DWN, saves it, emits Verilog, and runs that
+Verilog through a simulator. It is written to be read, and it shows exactly where your training
+script plugs in. **It is not part of the installed package** — download it, or clone the repo:
 
-One file, no dataset, no training: it builds a DWN, saves it, emits Verilog, and runs that Verilog
-through a simulator. It is written to be read, and it shows exactly where your training script
-plugs in.
+```bash
+curl -O https://raw.githubusercontent.com/dwn2rtl/dwn2rtl/main/examples/quickstart.py
+python quickstart.py
+```
 
 > `build` needs nothing but Python. **`verify` needs a Verilog simulator**, which you install
 > yourself: `winget install Icarus.Verilog` (Windows), `apt install iverilog` (Debian/Ubuntu), or
