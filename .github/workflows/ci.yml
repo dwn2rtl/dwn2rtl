@@ -28,6 +28,9 @@ jobs:
   test:
     name: ${{ matrix.os }} / py${{ matrix.python }}
     runs-on: ${{ matrix.os }}
+    # The whole suite runs in ~2 minutes. GitHub's default is 360, which is not a timeout so much
+    # as an afternoon -- this is the backstop for anything that stalls outside the apt step.
+    timeout-minutes: 30
     strategy:
       fail-fast: false          # a Windows-only failure must not hide a Linux one, or vice versa
       matrix:
@@ -52,11 +55,25 @@ jobs:
       # optional, and it is ~9 MB from apt against a 564 MB OSS CAD Suite download on Windows --
       # which also ships its own iverilog and would shadow the simulator the gate runs against.
       # Covering `estimate` on one platform is enough; the gate itself runs on both.
+      # ⚠️ apt WAITS RATHER THAN FAILS, and a waiting job looks like a working one. The runner's
+      # unattended-upgrades timer fires at boot and holds the dpkg lock, so this step can block
+      # behind it -- randomly, on one matrix job and not another, which is how it first showed up.
+      # With the job default of 360 minutes that is six hours of a green-looking spinner.
+      #
+      # DPkg::Lock::Timeout waits a bounded 10 minutes for the lock and then SAYS so;
+      # NEEDRESTART_MODE stops Ubuntu 24.04's needrestart prompting on a library it pulls in
+      # (-y answers apt, not needrestart); timeout-minutes turns a stall into a legible failure
+      # instead of a long silent one. Same rule as everything else here: do not let an unmeasured
+      # thing look like a measured one.
       - name: Install iverilog and yosys (Linux)
         if: runner.os == 'Linux'
+        timeout-minutes: 15
+        env:
+          DEBIAN_FRONTEND: noninteractive
+          NEEDRESTART_MODE: a
         run: |
-          sudo apt-get update
-          sudo apt-get install -y iverilog yosys
+          sudo apt-get update -o Acquire::Retries=3
+          sudo apt-get install -y -o DPkg::Lock::Timeout=600 iverilog yosys
 
       # winget is not available on GitHub's Windows runners; Chocolatey is preinstalled.
       # Whichever installer is used, note that it does NOT put iverilog on PATH -- see the
