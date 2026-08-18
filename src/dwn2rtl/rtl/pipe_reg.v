@@ -1,14 +1,10 @@
-// A pipeline stage that can be compiled out.
+// A pipeline stage that can be compiled out: ENABLE=1 inserts a register, ENABLE=0 is a bare
+// wire leaving no trace in the netlist. Depth is a build parameter, so one source covers every
+// latency and a design's latency is the sum of its enabled stages.
 //
-// Pipeline depth is a build parameter, not a property of the model, so stages are selectable
-// per build rather than hand-placed once. ENABLE=1 inserts a register; ENABLE=0 is a bare wire,
-// leaving no trace in the netlist. That means one RTL source covers every depth in the sweep,
-// and the latency of a config is just the sum of its enabled stages.
-//
-// No reset. These are datapath registers in a feed-forward pipeline: every stage is
-// overwritten by real data within LATENCY cycles of the first valid input, so a reset would
-// only add routing to a global net for no behavioural gain. The harness is responsible for
-// ignoring outputs until the pipe has filled. Control logic that DOES need reset lives there.
+// ⚠️ No reset, deliberately -- these are feed-forward datapath registers, overwritten by real
+// data within LATENCY cycles of the first valid input. Whatever drives this must ignore the
+// outputs until the pipe has filled.
 
 `timescale 1ns / 1ps
 `default_nettype none

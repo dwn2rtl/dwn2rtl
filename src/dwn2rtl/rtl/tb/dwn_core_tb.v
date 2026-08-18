@@ -1,23 +1,17 @@
 // GATE 1 -- the one non-negotiable rule.
 //
-// The RTL core is not complete until it bit-exact matches the golden software model on every
-// test vector including edge cases. This testbench is that check, and it is the ONLY
-// correctness signal in the project: there is no second independent implementation to
-// cross-check against.
+// The core is not correct until it matches the golden software model bit-exactly on every
+// vector, and this testbench is that check -- the only correctness signal there is, since no
+// second independent implementation exists to cross-check against.
 //
-// Scope: this tests the LUT CORE against pre-binarized inputs. The thermometer encoder is
-// checked separately by dwn_top_tb. Splitting them is why the training notebook saves both
-// x_raw and x_binarized -- a failure localizes itself instead of implicating the whole design.
+// Scope: the LUT CORE, driven with pre-binarized inputs. The thermometer encoder is checked
+// separately by dwn_top_tb, so a failure localizes instead of implicating the whole design.
 //
-// The design is PIPELINED, so this drives a new vector every cycle and checks the result
-// LATENCY cycles later. That is not just bookkeeping: streaming back-to-back vectors and
-// getting every one right is what proves II=1 -- one classification per clock. A
-// design that computed correctly but stalled would pass a one-vector-at-a-time testbench and
-// fail this one.
+// Vectors stream back-to-back, one per cycle, checked LATENCY cycles later: that is what proves
+// II=1. A design that computed correctly but stalled would pass a one-at-a-time testbench.
 //
-// LATENCY comes from dwn_core_params.vh, written by the same script that emitted the
-// pipeline. Hardcoding it here is how a depth change silently becomes an off-by-one
-// comparison against the wrong vector.
+// ⚠️ LATENCY comes from dwn_core_params.vh, never hardcoded -- otherwise a depth change
+// silently becomes an off-by-one comparison against the wrong vector.
 
 `timescale 1ns / 1ps
 `default_nettype none

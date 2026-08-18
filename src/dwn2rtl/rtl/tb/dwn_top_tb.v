@@ -1,36 +1,21 @@
 // GATE 1, TOP LEVEL -- quantized features in, class index out.
 //
-// The companion to dwn_core_tb. Together they are the one non-negotiable rule:
-// emitted RTL is not correct until a simulator says it matches the golden model on every
-// vector. An emitter's own read-back is not that check -- we have a recorded case where one
-// reported 20/20 correct while the design was wrong on 958 of 1,504 vectors.
-//
-// WHY TWO TESTBENCHES RATHER THAN ONE. dwn_core_tb drives PRE-BINARIZED bits, so it tests the
-// LUT network alone. This one drives quantized FEATURES through the thermometer encoder and
-// then the network. The split is what makes a failure localize itself:
+// The companion to dwn_core_tb, which drives PRE-BINARIZED bits and so tests the LUT network
+// alone. This one drives quantized FEATURES through the thermometer encoder as well, and the
+// split is what makes a failure localize itself:
 //
 //     core PASS, top FAIL   -> the encoder. Nothing else needs re-examining.
 //     core FAIL, top FAIL   -> the network; fix that first, this will follow.
 //
-// A single top-level testbench would have told you only that something, somewhere, was wrong --
-// and the encoder and the core are emitted by different files from different parts of the
-// checkpoint.
+// The encoder is what this level adds, and it is the half published DWN resource counts leave
+// out -- intrinsic to a DWN, not preprocessing, and on the smallest studied model fourteen
+// times the network it feeds. An unverified encoder is most of an unverified design.
 //
-// THE ENCODER IS WHAT THIS ADDS, and it is the part published DWN resource counts leave out.
-// It is not preprocessing a user supplies; it is intrinsic to a DWN, and on the smallest
-// studied model it is fourteen times the network it feeds. An unverified encoder is most of an
-// unverified design.
+// Vectors stream back-to-back, one per cycle, checked LATENCY cycles later: that is what proves
+// II=1. A design that computed correctly but stalled would pass a one-at-a-time testbench.
 //
-// The design is PIPELINED, so this drives a new vector every cycle and checks the result
-// LATENCY cycles later. That is not bookkeeping: streaming back-to-back vectors and getting
-// every one right is what proves II=1. A design that computed correctly but stalled would pass
-// a one-vector-at-a-time testbench and fail this one.
-//
-// LATENCY comes from dwn_top_params.vh, written by the same build that emitted the pipeline.
-// Hardcoding it here is how a depth change silently becomes an off-by-one comparison against
-// the wrong vector. IDX_W likewise: an earlier testbench of ours hardcoded 3, which left the
-// upper bits undriven below five classes and TRUNCATED the comparison above eight -- a 10-class
-// design was checked on three of its four index bits, and passed.
+// ⚠️ LATENCY and IDX_W come from dwn_top_params.vh, never hardcoded. An earlier testbench fixed
+// IDX_W at 3, so a 10-class design was checked on three of its four index bits -- and passed.
 
 `timescale 1ns / 1ps
 `default_nettype none

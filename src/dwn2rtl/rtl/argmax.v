@@ -1,28 +1,11 @@
-// Argmax over per-class popcounts.
+// Argmax over per-class popcounts, as a balanced tree of depth ceil(log2(K)).
 //
-// TIE-BREAKING IS PART OF THE SPEC, NOT AN IMPLEMENTATION DETAIL.
-//
-// With 10 nodes per class there are only 11 possible scores, so ties are common rather than
-// exotic: 29 of the 1000 Gate 1 test vectors (2.9%) have two or more classes sharing the top
-// score. numpy's argmax and torch's argmax both return the LOWEST index in that case, so the
-// golden model does too, so this must as well.
-//
-// The rule that enforces it is a strict `>` at every merge: a candidate only displaces the
-// incumbent by BEATING it. Using `>=` anywhere would keep the highest tied index instead, and
-// the design would disagree with the golden model on ~3% of vectors while looking correct on
-// the other 97% -- the kind of failure Gate 1 exists to catch and spot-checking never does.
-//
-// SHAPE: a balanced tree, not a linear scan.
-//
-// This was a sequential `for` loop over classes, where each iteration read the previous
-// iteration's `best`. That is a chain of K-1 dependent compare-and-selects: fine at K=5 (JSC,
-// 4 deep) and the critical path at K=10 (MNIST, 9 deep), where it synthesized to 17 logic
-// levels and held dwn_top to 87.5 MHz against a 100 MHz board.
-//
-// Pairwise reduction makes the depth ceil(log2(K)) instead of K-1, and preserves the tie-break
-// exactly: partners are merged low-index-first, and the right-hand (higher-index) candidate
-// only wins on a strict `>`, so equal scores always keep the lower index -- at every level,
-// and therefore overall.
+// ⚠️ TIE-BREAKING IS PART OF THE SPEC. Scores are small integers, so ties are common (~3% of
+// vectors). numpy and torch both return the LOWEST tied index, so the golden model does, so
+// this must. The rule enforcing it is the strict `>` at every merge: partners are compared
+// low-index-first and the higher-index candidate wins only by BEATING the lower, so equal
+// scores keep the lower index at every level and therefore overall. A `>=` anywhere would
+// disagree with the golden model on those ~3% while looking correct on the rest.
 
 `timescale 1ns / 1ps
 `default_nettype none
@@ -38,44 +21,21 @@ module argmax #(
     localparam integer IW     = (K <= 1) ? 1 : $clog2(K);
     localparam integer LEVELS = (K <= 1) ? 0 : $clog2(K);
 
-    // ONE structure for every K. There was briefly a `K <= 5 ? chain : tree` switch, to hold
-    // JSC's published dwn_core at 108 LUTs -- the tree costs +2 there. That branch encoded a
-    // fact about this project's git history, not about the target: nothing in the FPGA changes
-    // at five classes. Branches that encode history do not compose, because the next dataset
-    // brings a K with no principled place to go. The published figures are pinned by the
-    // `jsc-complete` tag instead, which is what tags are for.
+    // One structure for every K -- no chain/tree switch at some class count, because nothing in
+    // the hardware changes there. Odd entries CARRY FORWARD rather than pair against padding: a
+    // carry is a rename, padding is a compare-select that exists only to be discarded.
     //
-    // Depth is ceil(log2(K)) rather than the K-1 of a sequential scan. Odd entries CARRY
-    // FORWARD instead of pairing against padding: a carry is a rename, padding is a
-    // compare-select that exists only to be discarded.
-    // ⚠️ THE WAIVER BELOW IS A MEASURED FALSE POSITIVE, NOT A SILENCED BUG.
+    // ⚠️ A MEASURED FALSE POSITIVE, not a silenced bug. UNOPTFLAT ("circular combinational
+    // logic") is reported on these arrays and is FATAL by default, so a user linting an emitted
+    // design would be told their hardware has a loop. It has none: lvl_*[l+1] reads only
+    // lvl_*[l], so the level index strictly increases. The analysis is per-SIGNAL and one
+    // signal holds every level, so the array appears to depend on itself -- proven with a
+    // control, since a plain adder tree of the same shape raises the identical warning.
+    // Restructuring buys nothing measurable (sim time is unchanged), so it is waived here.
     //
-    // ⚠️ NOTE FOR EDITORS: never begin a comment line with the word "verilator". It is taken as
-    // a PRAGMA, and prose after it is rejected as an unknown one -- an ERROR that stops linting
-    // while iverilog still prints PASS, so the gate would not catch it. That happened while
-    // writing this very comment.
-    //
-    // UNOPTFLAT -- "circular combinational logic" -- is reported on these two arrays, and by
-    // default it is FATAL, so a user linting an emitted design would be told their hardware has
-    // a combinational loop. It does not: lvl_*[l+1] reads only lvl_*[l], so the level index
-    // strictly increases and the graph is a DAG.
-    //
-    // The cause is that dependency analysis is per-SIGNAL, and one signal here holds every
-    // level, so level l+1 depending on level l looks like the array depending on itself. Proven
-    // with a control rather than argued: a plain adder tree of the same shape -- provably
-    // acyclic, nothing but `+` -- raises the identical warning on the identical declaration
-    // line. A packed vector instead of an unpacked array raises it too, so the granularity is
-    // the cause, not the declaration style.
-    //
-    // Why waive rather than restructure into per-level signals: the only cost of UNOPTFLAT is
-    // that Verilator evaluates the block iteratively, and that cost is unmeasurable here --
-    // 0.04-0.07 s for 519 vectors, the same as iverilog on the same design. Rewriting logic
-    // that is bit-exact under two simulators and maps to the vendor's exact LUT count, to buy
-    // nothing measurable, is the trade this project already declined twice in phase 4.
-    //
-    // The pragma is a comment to every other tool -- iverilog, yosys and vendor flows ignore
-    // it -- so it costs no vendor neutrality. Verified: both levels still PASS under iverilog
-    // AND Verilator with it in place.
+    // ⚠️ EDITORS: never begin a comment line with the word "verilator" -- it is read as a
+    // PRAGMA and the prose after it is rejected, an ERROR that stops linting while iverilog
+    // still prints PASS. tests/test_lint.py pins this.
     /* verilator lint_off UNOPTFLAT */
     wire [W-1:0]  lvl_score [0:LEVELS][0:K-1];
     wire [IW-1:0] lvl_index [0:LEVELS][0:K-1];
