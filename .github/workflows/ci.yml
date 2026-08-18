@@ -4,10 +4,11 @@
 #    vector. This runs in CI on every commit. A change that cannot pass it is not finished."
 #
 # TWO PLATFORMS, DELIBERATELY. Windows is the primary development target, because that is where
-# most users will pip install this -- and it is where the odd failures live. An earlier
-# iteration of this code hit three Windows-only bugs in one week (a cp1252 console crash on an emoji in print(), a \v path
-# escape turning scripts\verify into a vertical tab, and CRLF breaking multi-line string
-# matching). All three are invisible on Linux. Linux is where everyone else will run it.
+# most users will pip install this -- and it is where the odd failures live. The study hit
+# three Windows-only bugs in one week (a cp1252 console crash on an emoji in
+# print(), a \v path escape turning scripts\verify into a vertical tab, and CRLF breaking
+# multi-line string matching). All three are invisible on Linux, which is where everyone else
+# will run it.
 #
 # THE JOB MUST FAIL WHEN THE SIMULATOR IS MISSING, not skip. tests/conftest.py skips
 # `sim`-marked tests when it cannot find one, which is right for a contributor's laptop and

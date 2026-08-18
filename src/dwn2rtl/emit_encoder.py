@@ -2,7 +2,7 @@
 
 The encoder is the piece published DWN resource totals leave out. They exclude the binarization
 front end entirely, and Mecik & Kumm measured that omission at up to 3.2x the reported LUTs. On
-a large part it may not matter; on a small one it can dominate. In the earlier implementation's smallest
+a large part it may not matter; on a small one it can dominate. In the study's smallest
 model the encoder was FOURTEEN TIMES the network it fed -- 50 LUT6 nodes against 202
 comparators.
 
@@ -19,7 +19,7 @@ Only the thermometer bits some node actually reads are given a comparator. The r
 vector is tied low: no node reads them, so they cost nothing after synthesis, and keeping the
 full width means dwn_core does not have to change to match.
 
-Ported from the earlier implementation's `rtlgen/emit_encoder.py`. Changes: the CLI `main()` became
+Ported from the study's `rtlgen/emit_encoder.py`. Changes: the CLI `main()` became
 `build_encoder()`; the dataset lookup that supplied default word/frac widths is gone, and both
 are now REQUIRED arguments (see precision.py for where they come from); and two emitted Verilog
 comments that hardcoded one model's numbers now carry the actual ones.
@@ -199,7 +199,7 @@ def verify_emitted(path, used, thr_q, z, word):
 def build_encoder(ck, outdir, precision, pipe_enc=1):
     """Emit thermometer_encoder.v + dwn_top.v + dwn_top_params.vh, then read back and check.
 
-    Replaces the earlier implementation's argparse `main()`. `precision` is a precision.Precision -- there
+    Replaces the study's argparse `main()`. `precision` is a precision.Precision -- there
     is no default and no dataset lookup behind it, because a caller that does not know the word
     width does not know enough to emit an encoder.
 

@@ -16,7 +16,7 @@ learnable wiring, `> 0` table thresholding, contiguous GroupSum groups -- was re
 upstream DWN source and written up in `docs/checkpoint-format.md`. Read correctly is not the
 same as implemented correctly, which is why the gate is a simulator, not a review.
 
-Ported from the earlier implementation's `exporter/extract.py`. Changes: the CLI `main()` was removed
+Ported from the study's `exporter/extract.py`. Changes: the CLI `main()` was removed
 (it verified numpy against a dataset's saved `pred` array, which this tool has no dataset for
 -- `vectors.py` and the emitted testbench cover it instead), and `required_int_bits()` moved
 to `precision.py`.
@@ -112,8 +112,8 @@ def forward(x_bits, layers, num_classes):
 # between this and the float32 model is then a characterization result to report rather than
 # a discrepancy to hide. The format is chosen by measurement, never by convention.
 #
-# THERE ARE NO MODULE-LEVEL FRAC_BITS/WORD_BITS, and adding some would be a regression. An
-# earlier iteration had them, set to 16 and 12 -- one dataset's format -- and every consumer that
+# THERE ARE NO MODULE-LEVEL FRAC_BITS/WORD_BITS, and adding some would be a regression. The
+# study had them, set to 16 and 12 -- one dataset's format -- and every consumer that
 # imported them inherited that precision as a default it never stated. The second dataset
 # needed Q0.8, so each of those sites was a silent wrong answer waiting to happen; six were
 # found one crash at a time before the constants were removed.
@@ -133,7 +133,7 @@ def quantize(x, frac_bits, word_bits):
 
     Why it is normally fine: clamping changes no encoder bit as long as every threshold lies
     strictly inside the representable range, since a saturated feature is still on the same
-    side of every threshold it was before. In the earlier implementation's JSC model the word represented
+    side of every threshold it was before. In the study's JSC model the word represented
     [-8, +8) while the extreme thresholds were -4.55 and +4.34, so features out at 8.08 -- and
     they existed, in a handful of 166,000 samples -- encoded identically to 7.9998.
 

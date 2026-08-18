@@ -21,7 +21,7 @@ WHAT IS ACCEPTED, and why three shapes rather than one:
 
     {'model': nn.Module, 'thermometer': ...}     plain torch.save -- the documented primary
                                                  path, requiring no dwn2rtl import at all
-    {config, state_dict, thermometer, results}   the earlier implementation's existing checkpoints, which
+    {config, state_dict, thermometer, results}   the study's existing checkpoints, which
                                                  are the published evidence this generator works
     a live model + thermometer                   from_model(), for the moment training ends
 
@@ -340,7 +340,7 @@ def normalize(obj, source=None):
     """
     where = f' (from {source})' if source else ''
 
-    # 1. Already ours -- the earlier implementation's checkpoints land here unchanged.
+    # 1. Already ours -- the study's checkpoints land here unchanged.
     if isinstance(obj, Mapping) and 'config' in obj and 'state_dict' in obj:
         if 'thermometer' not in obj:
             raise _bare_state_dict_error(obj['state_dict'])

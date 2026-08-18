@@ -56,7 +56,7 @@ rather than cosmetic. Transferred to a `dwn2rtl` organisation with both as owner
 Publisher and leaving stale URLs frozen in already-released metadata. Before the first release it
 costs nothing. `github.com/dwn2rtl/dwn2rtl`.
 
-**Decided: the earlier research repository stays where it is.** It was already public —
+**Decided: the study stays where it is.** It was already public —
 checked rather than assumed, with a control — so the README's evidence link already resolved and
 the planned conversion from link to citation was dropped as unnecessary work.
 

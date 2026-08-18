@@ -1,6 +1,6 @@
 """What a build is: an output directory, a fixed-point format, and a pipeline depth.
 
-NOT ported. The earlier implementation has a `rtlgen/config.py` of 254 lines and none of it belongs here --
+NOT ported. The study has a `rtlgen/config.py` of 254 lines and none of it belongs here --
 it was sweep-shaped, built to name and resolve one point in a design-space exploration:
 checkpoint slugs, per-config build directories, result paths, an FPGA part number, a target
 clock. A generator has no sweep, no part and no clock. Copying it would import that earlier work's
@@ -25,7 +25,7 @@ from .precision import Precision
 class Pipeline:
     """Where the registers go. Each is a stage count; 0 compiles that stage out entirely.
 
-    Defaults match the earlier implementation's shipped depth, which was chosen by measurement rather than
+    Defaults match the study's shipped depth, which was chosen by measurement rather than
     intuition: out-of-context synthesis put 10.194 ns in the core against 2.962 ns in the
     encoder, so the depth belongs in the popcount and argmax trees, and there is a stage after
     each of them.
@@ -62,7 +62,7 @@ class BuildConfig:
     `precision` has no default on purpose. It is derived per model by
     precision.precision_for(), because the integer width depends on the thresholds -- a default
     here would be one model's format silently applied to another, which is the exact defect
-    that cost the earlier implementation six separate crashes.
+    that cost the study six separate crashes.
     """
 
     outdir: str

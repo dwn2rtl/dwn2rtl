@@ -1,6 +1,6 @@
 """How wide the encoder's input word is, and where that number comes from.
 
-Extracted from the earlier implementation's `datasets/__init__.py`, which carried per-dataset fixed-point
+Extracted from the study's `datasets/__init__.py`, which carried per-dataset fixed-point
 formats as data. This tool has no datasets, so the format has to be DERIVED or ASKED FOR. The
 policy below is the whole reason this is its own module.
 
@@ -13,8 +13,8 @@ The two halves of a fixed-point word are not equally knowable.
                   is a hard floor and required_int_bits() computes it.
 
   fractional bits NOT derivable from the checkpoint. How much precision the input needs depends
-                  on whether quantisation changes predictions, which depends on the DATA. An
-                  earlier iteration learned this the expensive way: a narrowing was fitted and
+                  on whether quantisation changes predictions, which depends on the DATA. The
+                  study learned this the expensive way: a narrowing was fitted and
                   validated on the same 1,000 samples, and 8 of 15 features came out too narrow
                   when checked against held-out data.
 
@@ -26,7 +26,7 @@ anything already digital -- `frac = input_bits` is PROVABLY lossless, not merely
 8-bit pixels scaled to [0,1], i.e. values k/255 for integer k. Quantising at frac=8 computes
 floor(k * 256/255), which is strictly increasing over k = 0..255. Strictly increasing means
 order is preserved exactly, and since every encoder bit is an order comparison `x > t`, no bit
-can change. The earlier implementation's MNIST port is the empirical confirmation: 0 of 10,000 samples
+can change. The study's MNIST port is the empirical confirmation: 0 of 10,000 samples
 diverged, which is what a proof predicts.
 
 A continuous input has no such quantum, and then there is no proof to be had -- only a default
@@ -37,7 +37,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-# For a continuous input with no native quantum. The earlier implementation's JSC models used 12 fractional
+# For a continuous input with no native quantum. The study's JSC models used 12 fractional
 # bits over standard-scaled features and measured 10 bit errors and 0 class changes against
 # float32 -- good, but MEASURED on one dataset, not proved. It is a starting point for a stress
 # test, not a guarantee, and `Precision.proved` records which of the two you have.

@@ -10,11 +10,11 @@ What is hand-written vs emitted:
 ⚠️ `verify_emitted()` below is NOT the gate. It parses the emitted file back and asserts every
 table and wire index against the checkpoint, which catches a wrong constant and -- the reason
 it exists -- a reversed address concatenation. But it only proves the file SAYS what the
-checkpoint says. It says nothing about how the Verilog BEHAVES. In the earlier implementation an emitter's
+checkpoint says. It says nothing about how the Verilog BEHAVES. In the study an emitter's
 own read-back reported 20/20 correct while the design was wrong on 958 of 1,504 vectors. Only
 a simulator closes that gap. See CLAUDE.md, "the gate".
 
-Ported from the earlier implementation's `rtlgen/emit_core.py`. Changes: the CLI `main()` became
+Ported from the study's `rtlgen/emit_core.py`. Changes: the CLI `main()` became
 `build_core()`, and imports are package-relative.
 """
 
@@ -82,7 +82,7 @@ def emit(ck, out_path, pipe_lut=PIPE_LUT, pipe_pop=PIPE_POP, pipe_out=PIPE_OUT):
         layers.append((extract_tables(sd, i), *extract_wiring(sd, i, n)))
 
     # The encoder's output width, read from the thresholds themselves -- (features, z), so
-    # .size is features x z. NEVER a literal feature count -- in the earlier implementation this was once
+    # .size is features x z. NEVER a literal feature count -- in the study this was once
     # `16 * z`, one dataset's feature count written in, and it did not fail loudly: it emits a
     # core whose input port is the wrong width, which elaborates and then disagrees with the
     # encoder. emit_encoder.py derives it the same way, from the same array.
@@ -245,7 +245,7 @@ def verify_emitted(path, layers, n):
 def build_core(ck, outdir, pipeline=None):
     """Emit dwn_core.v + dwn_core_params.vh, then read them back and check.
 
-    Replaces the earlier implementation's argparse `main()`. Returns a dict the caller can report from --
+    Replaces the study's argparse `main()`. Returns a dict the caller can report from --
     nothing is printed here, because a library that prints is a library you cannot call twice.
 
     Raises AssertionError if the read-back disagrees with the checkpoint. That is deliberate:

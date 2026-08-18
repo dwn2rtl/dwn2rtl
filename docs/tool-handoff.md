@@ -71,8 +71,8 @@ a default plus a measured bit-error, labelled a stress test rather than a proof.
 **Q3. Which upstream commits to support.** One pin is honest and cheap; a range needs a
 compatibility layer.
 
-**Q4. The name.** `dwn2rtl` is a placeholder used in discussion only. The study repository it came
-from is the earlier research repository.
+**Q4. The name.** `dwn2rtl` is a placeholder used in discussion only.
+*(Resolved: it is the real name, published as `dwn2rtl` — see `phase5-report.md` §5.)*
 
 ## 4. Where this code came from
 
@@ -131,7 +131,7 @@ Make it the tool's first CI check rather than an assumption.
 
 ## 9. External citations — evidence, not dependencies
 
-These were measured in the earlier research repository and **cannot be opened from
+These were measured in the study and **cannot be opened from
 here.** They are worth citing in this project's README, because they are the evidence the generator
 works. Nothing in this repo requires them to exist.
 
