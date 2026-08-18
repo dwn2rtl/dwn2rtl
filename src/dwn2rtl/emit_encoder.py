@@ -1,28 +1,25 @@
 """Emit the thermometer encoder and the top-level wrapper from a checkpoint.
 
-The encoder is the piece published DWN resource totals leave out. They exclude the binarization
-front end entirely, and Mecik & Kumm measured that omission at up to 3.2x the reported LUTs. On
-a large part it may not matter; on a small one it can dominate. In the study's smallest
-model the encoder was FOURTEEN TIMES the network it fed -- 50 LUT6 nodes against 202
+The encoder is the piece published DWN resource totals leave out -- they exclude the
+binarization front end entirely, and Mecik & Kumm measured that omission at up to 3.2x the
+reported LUTs. On a large network it may not matter; on a small one it dominates. In the study's
+smallest model the encoder was FOURTEEN TIMES the network it fed: 50 LUT6 nodes against 202
 comparators.
 
-So encoder and core are emitted as SEPARATE modules, wired together by a thin top. That is not
-tidiness: it is what makes it possible to synthesize each alone and report their areas
-separately, which this tool does unconditionally. See CLAUDE.md, "design invariants".
+⚠️ So encoder and core are emitted as SEPARATE modules wired by a thin top. That is not
+tidiness -- it is what lets each be synthesized alone and reported separately, which this tool
+does unconditionally.
 
 What gets built:
   thermometer_encoder.v   one comparator per USED thermometer bit, constants folded in
   dwn_top.v               encoder -> core
   dwn_top_params.vh       end-to-end latency
 
-Only the thermometer bits some node actually reads are given a comparator. The rest of the
-vector is tied low: no node reads them, so they cost nothing after synthesis, and keeping the
-full width means dwn_core does not have to change to match.
+Only thermometer bits some node actually reads get a comparator; the rest are tied low, so they
+cost nothing after synthesis while dwn_core keeps its full input width unchanged.
 
-Ported from the study's `rtlgen/emit_encoder.py`. Changes: the CLI `main()` became
-`build_encoder()`; the dataset lookup that supplied default word/frac widths is gone, and both
-are now REQUIRED arguments (see precision.py for where they come from); and two emitted Verilog
-comments that hardcoded one model's numbers now carry the actual ones.
+`precision` is a REQUIRED argument -- there is no dataset lookup behind it, because a caller
+that does not know the word width must not be given a silent default. See precision.py.
 """
 
 import os

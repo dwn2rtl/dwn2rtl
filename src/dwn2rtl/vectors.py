@@ -1,34 +1,24 @@
 """Generate self-checking testbench vectors from the model alone.
 
-REWRITTEN, not ported. The study's `tb/gen_vectors.py` mixed 500 random vectors with real
-samples loaded from a dataset's `.npz`. This tool has no dataset, so the real half is gone and
-the random half is kept.
+Random inputs, not real samples, and deliberately so:
 
-That is not a compromise, and it is worth being clear about why:
-
-  THE GATE IS RTL-VERSUS-GOLDEN-MODEL, NOT RTL-VERSUS-DATASET.
+  ⚠️ THE GATE IS RTL-VERSUS-GOLDEN-MODEL, NOT RTL-VERSUS-DATASET.
 
 What must be proved is that the Verilog computes the same function as extract.forward(). Real
-samples are one sample of that function's domain, and a biased one -- they cluster where the
-data clusters, which is precisely where nothing interesting happens. Random vectors plus
-deliberate edge cases cover the tie-breaks and saturation boundaries real data mostly misses.
-The study's real-data half caught nothing its random half did not.
+samples are a biased sample of that domain -- they cluster where the data clusters, which is
+where nothing interesting happens -- while random vectors plus deliberate edge cases cover the
+tie-breaks and saturation boundaries. (Real data would prove the model is ACCURATE, a training
+question this tool has no opinion about.)
 
-What real data WOULD prove is that the model is accurate, which is a training question this
-tool has no opinion about.
+⚠️ THE INVARIANT THAT MUST NOT BREAK: vectors and RTL derive from the SAME checkpoint. Otherwise
+you ship a testbench that passes against wrong RTL -- worse than shipping none, because it is a
+green light nobody has reason to distrust. build() does both from one load; nothing here should
+grow a `--checkpoint` of its own.
 
-THE INVARIANT THAT MUST NOT BREAK: vectors and RTL derive from the SAME checkpoint. Otherwise
-you ship a testbench that passes against wrong RTL, which is worse than shipping no testbench
-at all -- a green light nobody has any reason to distrust. build() does both from one load;
-nothing here should ever grow a `--checkpoint` of its own.
-
-Two levels are emitted, because a failure in one must not be able to hide in the other:
+Two levels, so a failure in one cannot hide in the other:
 
   core   binarized vectors      -> dwn_core   (x_binarized.hex, expected.hex)
   top    quantized features     -> dwn_top    (x_quant.hex, expected_top.hex)
-
-If the top level fails while the core passes, the encoder is at fault and nothing else needs
-re-examining. That split is worth the extra file.
 """
 
 import os

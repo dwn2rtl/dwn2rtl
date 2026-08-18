@@ -1,24 +1,19 @@
 """The `dwn2rtl` terminal command.
 
-A thin argument parser over the library and nothing more. Every subcommand here should be a few
-lines of "collect arguments, call one function, print its report" -- if logic starts accumulating
-in this file, it is in the wrong place, because then the CLI and `import dwn2rtl` stop being the
-same thing.
+A thin argument parser over the library. Every subcommand should be "collect arguments, call one
+function, print its report" -- logic accumulating here means the CLI and `import dwn2rtl` have
+stopped being the same thing.
 
-THE COMMAND SURFACE IS DERIVE, DO NOT ASK (roadmap §5.2). Almost everything a build needs is
-already in the checkpoint: features, classes, layers, n, z, wiring, table contents, and the
-integer width -- which is derivable EXACTLY from the thresholds. A tool that makes the user
+DERIVE, DO NOT ASK. Almost everything a build needs is already in the checkpoint: features,
+classes, layers, n, z, wiring, table contents, and the integer width. A tool that makes a user
 restate what it could have read is a wrapper, not a tool.
 
-Exactly one thing cannot be derived, and it is not the one people expect. It is not fractional
-bits -- that is a question no user can answer. It is `--input-bits`, the precision of the user's
-INPUT, which is a fact they possess (8-bit pixels, a 12-bit ADC). Fractional width falls out of
-it, and when the input has a native quantum the result is provably lossless rather than merely
-measured. See precision.py.
+Exactly one thing cannot be derived, and it is not the expected one. Not fractional bits -- no
+user can answer that. It is `--input-bits`, the precision of their INPUT, which is a fact they
+possess (8-bit pixels, a 12-bit ADC). See precision.py.
 
-STDOUT MUST BE ASCII (CLAUDE.md). Windows consoles default to cp1252 and raise UnicodeEncodeError
-on an emoji in print(), which turns a successful build into a traceback. Comments may use
-anything; printed output may not.
+⚠️ STDOUT MUST BE ASCII. Windows consoles default to cp1252 and raise UnicodeEncodeError on an
+emoji in print(), turning a successful build into a traceback. Comments may use anything.
 """
 
 import argparse

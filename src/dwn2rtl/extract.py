@@ -1,25 +1,20 @@
 """Checkpoint -> LUT tables, wiring, thresholds. Also the golden model.
 
-Two jobs in one file, and they are one file on purpose:
+Two jobs in one file, on purpose:
 
-1. Turn a checkpoint into the three things hardware needs -- per-node truth tables, per-node
-   input wiring, and the thermometer thresholds those inputs come from.
-2. Run a pure-numpy forward pass over exactly those artifacts. `forward()` here is the golden
-   model every emitted testbench is checked against.
+1. Turn a checkpoint into what hardware needs -- per-node truth tables, per-node input wiring,
+   and the thermometer thresholds those inputs come from.
+2. Run a pure-numpy forward pass over exactly those artifacts. `forward()` is the golden model
+   every emitted testbench is checked against.
 
-Keeping them together is the guarantee: the model the RTL is compared to is built from the
-same tables the RTL was emitted from, so the comparison cannot drift. Splitting them would
-allow a golden model that agrees with PyTorch while the emitted design disagrees with both.
+⚠️ Keeping them together is the guarantee: the model the RTL is compared against is built from
+the same tables the RTL was emitted from, so the comparison cannot drift. Split, a golden model
+could agree with PyTorch while the emitted design disagrees with both.
 
-Every structural fact this file relies on -- LSB-first address order, `argmax(dim=0)` for
-learnable wiring, `> 0` table thresholding, contiguous GroupSum groups -- was read out of the
-upstream DWN source and written up in `docs/checkpoint-format.md`. Read correctly is not the
-same as implemented correctly, which is why the gate is a simulator, not a review.
-
-Ported from the study's `exporter/extract.py`. Changes: the CLI `main()` was removed
-(it verified numpy against a dataset's saved `pred` array, which this tool has no dataset for
--- `vectors.py` and the emitted testbench cover it instead), and `required_int_bits()` moved
-to `precision.py`.
+Every structural fact relied on here -- LSB-first address order, `argmax(dim=0)` for learnable
+wiring, `> 0` table thresholding, contiguous GroupSum groups -- is written up in
+`docs/checkpoint-format.md`. Read correctly is not the same as implemented correctly, which is
+why the gate is a simulator and not a review.
 """
 
 import re

@@ -1,35 +1,25 @@
 """Synthesize an emitted design with yosys and report what it costs. Optional, and honest.
 
-WHAT THIS IS FOR: answering "will this fit?" before committing to a real synthesis run. It is
-not a substitute for one, and the numbers below are calibrated evidence of exactly how much it
-is not.
+For answering "will this fit?" before committing to a real synthesis run. It is not a substitute
+for one, and the calibration below says exactly how much it is not.
 
-⚠️ THE CALIBRATION, MEASURED BEFORE THIS FILE WAS WRITTEN (docs/phase4-ledger.md §3). The study
-recorded real Vivado figures for JSC `1x50` on an xc7a35t, so the same design was estimated here
-and compared:
+⚠️ CALIBRATED AGAINST VIVADO on an xc7a35t, before this file was written (docs/phase4-ledger.md):
 
     dwn_core              110 yosys   vs   110 Vivado    1.00x   trustworthy
     thermometer_encoder   717 yosys   vs  1519 Vivado    0.47x   HALF
     dwn_top               833 yosys   vs  1621 Vivado    0.51x
 
-⚠️ ~~core 106, 0.96x, top 838~~ -- withdrawn (docs/phase4-ledger.md §7). Those came from
-`synth -flatten`; the explicit `hierarchy; flatten` pass this file now runs lands the core on
-Vivado EXACTLY. The correction is small but it runs the other way to the usual: the tool agrees
-with the vendor better than it used to claim.
+The core lands exactly. The encoder is 2.1x low, and not because yosys is wrong: a 16-bit signed
+comparison against a constant genuinely fits in ~3 LUT6s, while Vivado maps comparators onto
+carry chains that cost more. Generic mapping is simply optimistic for comparator-heavy logic.
 
-The core agrees exactly. The encoder is out by 2.1x, and not because yosys is wrong: a 16-bit
-signed comparison against a constant genuinely fits in ~3 LUT6s, which is what generic mapping
-finds, while Vivado on 7-series maps comparators onto carry chains that cost more LUTs. Generic
-mapping is simply optimistic for comparator-heavy logic.
+⚠️ So this reports PER-MODULE counts and says which half to believe. It must never present a
+total as a vendor number, and never let the encoder-to-core ratio pass unqualified -- that ratio
+is 13.8x by Vivado and 6.5x here, and understating it would undercut the finding this project
+exists to publicise.
 
-So this module reports per-module counts and says which half to believe. It must never present
-a total as a vendor number, and it must never let the encoder-to-core ratio pass unqualified --
-that ratio is 13.8x by Vivado and 6.5x here, and understating it would undercut the one finding
-this whole project exists to publicise.
-
-WHY NOT AN AREA MODEL: roadmap Q7. The study built one, and across two completed
-studies it filtered zero configurations. This shells out to a real synthesis tool, or it reports
-nothing.
+WHY NOT AN AREA MODEL: roadmap Q7. The study built one and it filtered zero configurations
+across two completed studies. This shells out to a real synthesis tool, or it reports nothing.
 """
 
 import os

@@ -1,21 +1,14 @@
 """Emit the model-specific DWN core Verilog from a checkpoint, then read it back and check it.
 
-What is hand-written vs emitted:
-  hand-written   rtl/lut_node.v, rtl/popcount.v, rtl/argmax.v -- shipped as package data. The
-                 structure and the address/tie-break conventions, i.e. everything with a
-                 decision in it
-  emitted        dwn_core.v -- one truth table and n wire indices per node, i.e. everything
-                 that is pure transcription
+  hand-written   rtl/lut_node.v, popcount.v, argmax.v -- shipped as package data. The structure
+                 and the address/tie-break conventions: everything with a decision in it
+  emitted        dwn_core.v -- one truth table and n wire indices per node: pure transcription
 
 ⚠️ `verify_emitted()` below is NOT the gate. It parses the emitted file back and asserts every
-table and wire index against the checkpoint, which catches a wrong constant and -- the reason
-it exists -- a reversed address concatenation. But it only proves the file SAYS what the
-checkpoint says. It says nothing about how the Verilog BEHAVES. In the study an emitter's
-own read-back reported 20/20 correct while the design was wrong on 958 of 1,504 vectors. Only
-a simulator closes that gap. See CLAUDE.md, "the gate".
-
-Ported from the study's `rtlgen/emit_core.py`. Changes: the CLI `main()` became
-`build_core()`, and imports are package-relative.
+table and wire index against the checkpoint, which catches a wrong constant and -- the reason it
+exists -- a reversed address concatenation. But it only proves the file SAYS what the checkpoint
+says, never how the Verilog BEHAVES. In the study an emitter's own read-back reported 20/20
+correct while the design was wrong on 958 of 1,504 vectors. Only a simulator closes that gap.
 """
 
 import os

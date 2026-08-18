@@ -1,27 +1,23 @@
 """checkpoint -> a self-contained directory of Verilog, parameters and golden vectors.
 
-This is the whole tool in one function. Everything else is a component of it or a wrapper
-around it.
+This is the whole tool in one function; everything else is a component or a wrapper.
 
-ORDER IS LOAD-BEARING, and not merely conventional:
+⚠️ ORDER IS LOAD-BEARING, not conventional:
 
     build_core      emits dwn_core.v AND dwn_core_params.vh
-    build_encoder   READS dwn_core_params.vh to learn the core's real pipeline depth, then
-                    emits the encoder, dwn_top.v and dwn_top_params.vh
+    build_encoder   READS dwn_core_params.vh for the core's real pipeline depth, then emits the
+                    encoder, dwn_top.v and dwn_top_params.vh
     generate        writes the vectors, using the layers build_core already extracted
 
-The encoder does not take the pipeline depth as an argument twice. dwn_top instantiates
-dwn_core and passes PIPE_LUT/PIPE_POP/PIPE_OUT down, so dwn_top's parameters OVERRIDE the
-core's -- and if the two were told the depth independently they could disagree, producing a top
-whose latency constant does not match its own pipeline. Reading it back from the file the core
-just wrote makes that impossible rather than merely unlikely. build_encoder raises
-FileNotFoundError if called first.
+dwn_top instantiates dwn_core and passes PIPE_LUT/PIPE_POP/PIPE_OUT down, so its parameters
+OVERRIDE the core's. Told the depth independently the two could disagree, giving a top whose
+latency constant does not match its own pipeline; reading it back from the file the core just
+wrote makes that impossible rather than unlikely. build_encoder raises FileNotFoundError if
+called first.
 
-THE INVARIANT THAT MUST NOT BREAK (CLAUDE.md): the vectors and the RTL derive from the same
-checkpoint. Otherwise you ship a testbench that passes against wrong RTL -- a green light nobody
-has any reason to distrust, which is worse than shipping no testbench at all. build() loads
-once, and hands the layers build_core extracted straight to generate(). Nothing downstream is
-allowed to re-open the checkpoint.
+⚠️ THE INVARIANT THAT MUST NOT BREAK: vectors and RTL derive from the SAME checkpoint, or you
+ship a testbench that passes against wrong RTL -- worse than shipping none. build() loads once
+and hands build_core's layers straight to generate(); nothing downstream may re-open the file.
 """
 
 import os

@@ -1,37 +1,25 @@
 """What a checkpoint IS -- the format, both ends of it, and the errors that stop a wrong one.
 
-THE PROBLEM THIS MODULE EXISTS FOR (roadmap Q8). Upstream DWN saves nothing. `examples/mnist.py`
-trains, prints an accuracy, and exits; there is no `torch.save` anywhere in it. So there is no
-such thing as "a DWN checkpoint" in the wild, and any format is one we invented.
+Upstream DWN saves nothing, so there is no "DWN checkpoint" in the wild and any format is one
+this tool invented (roadmap Q8).
 
-And it cannot be the obvious one, because A DWN IS TWO OBJECTS. The thermometer's thresholds are
-fitted BEFORE training and are not parameters of the model, so they are not in `state_dict`.
-Measured on a real checkpoint, `state_dict` holds exactly:
+⚠️ A DWN IS TWO OBJECTS. The thermometer's thresholds are fitted BEFORE training and are not
+model parameters, so they are absent from `state_dict` -- which holds only the LUTs, the mapping
+and a dummy. `torch.save(model.state_dict())`, what every PyTorch user reaches for, therefore
+SILENTLY LOSES THE ENCODER, and the encoder can be fourteen times the network it feeds. Such a
+file would emit a design that synthesizes cleanly, reports a plausible area, and classifies at
+chance -- so this module refuses it by name and says what to do instead.
 
-    ['0._LUTLayer__dummy_mapping', '0.luts', '0.mapping.weights']
+Three accepted shapes, because no user arrives already holding our format:
 
--- and no thresholds. `torch.save(model.state_dict())`, which is what every PyTorch user reaches
-for, therefore SILENTLY LOSES THE ENCODER. On the smallest studied model the encoder is fourteen
-times the network it feeds. A tool that accepted that file would emit a design that synthesizes
-cleanly, reports a plausible area, and classifies at chance.
-
-So this module refuses it, by name, and says what to do instead.
-
-WHAT IS ACCEPTED, and why three shapes rather than one:
-
-    {'model': nn.Module, 'thermometer': ...}     plain torch.save -- the documented primary
-                                                 path, requiring no dwn2rtl import at all
-    {config, state_dict, thermometer, results}   the study's existing checkpoints, which
-                                                 are the published evidence this generator works
+    {'model': nn.Module, 'thermometer': ...}     plain torch.save -- the primary path, needing
+                                                 no dwn2rtl import in a training script
+    {config, state_dict, thermometer, results}   the study's existing checkpoints
     a live model + thermometer                   from_model(), for the moment training ends
 
-One strict format was considered and rejected: since no user arrives already holding our format,
-insisting on it would put an import into everyone's training script to solve a problem that one
-line of plain `torch.save` already solves. Sniffing costs the few lines below.
-
-NOTHING HERE IMPORTS THE UPSTREAM DWN PACKAGE. Every fact is read from the tensors and from
-duck-typed attributes, so a user does not need `torch_dwn` installed to convert a checkpoint they
-already have, and a version bump upstream cannot break loading.
+⚠️ NOTHING HERE IMPORTS THE UPSTREAM DWN PACKAGE. Every fact is read from tensors and duck-typed
+attributes, so converting a checkpoint needs no `torch_dwn`, and an upstream bump cannot break
+loading.
 """
 
 import re

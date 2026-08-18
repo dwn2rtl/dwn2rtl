@@ -1,18 +1,11 @@
 """What a build is: an output directory, a fixed-point format, and a pipeline depth.
 
-NOT ported. The study has a `rtlgen/config.py` of 254 lines and none of it belongs here --
-it was sweep-shaped, built to name and resolve one point in a design-space exploration:
-checkpoint slugs, per-config build directories, result paths, an FPGA part number, a target
-clock. A generator has no sweep, no part and no clock. Copying it would import that earlier work's
-shape into a tool that does not have that shape.
+Three things and no more. The things that vary between builds are DATA, not edits -- a different
+pipeline depth is a different Pipeline, not a changed constant in emit_core.py. That is what
+lets a user run a sweep without this tool knowing anything about sweeps.
 
-What survived is the idea it was built around, which is worth keeping: the things that vary
-between builds are DATA, not edits. A different pipeline depth is a different Pipeline, not a
-changed constant in emit_core.py. That is what makes a sweep possible for a user who wants one
-without this tool needing to know about sweeps at all.
-
-Three things and no more. If a fourth ever wants to live here, ask first whether it is a
-property of the BUILD or a property of someone's board -- the second belongs to the user.
+If a fourth thing wants to live here, ask first whether it is a property of the BUILD or of
+someone's board. The second belongs to the user.
 """
 
 import os

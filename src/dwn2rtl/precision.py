@@ -1,36 +1,24 @@
 """How wide the encoder's input word is, and where that number comes from.
 
-Extracted from the study's `datasets/__init__.py`, which carried per-dataset fixed-point
-formats as data. This tool has no datasets, so the format has to be DERIVED or ASKED FOR. The
-policy below is the whole reason this is its own module.
+⚠️ THE RULE: never ask a user for fractional bits. The two halves of a fixed-point word are not
+equally knowable.
 
-THE RULE: never ask a user for fractional bits.
+  integer bits    DERIVABLE exactly from the thresholds -- a threshold outside the representable
+                  range makes every comparison against it meaningless, so it is a hard floor.
 
-The two halves of a fixed-point word are not equally knowable.
+  fractional bits NOT derivable from a checkpoint: how much precision is needed depends on
+                  whether quantisation changes predictions, which depends on the DATA. The study
+                  learned this expensively -- a narrowing fitted and validated on the same 1,000
+                  samples put 8 of 15 features too narrow against held-out data.
 
-  integer bits    DERIVABLE, exactly, from the thresholds. A threshold outside the
-                  representable range makes every comparison against it meaningless, so this
-                  is a hard floor and required_int_bits() computes it.
+So the tool asks for `--input-bits`, the precision of the INPUT, which a user actually possesses;
+fractional bits fall out of it. When the input has a native quantum -- 8-bit pixels, most ADCs,
+anything already digital -- that is PROVABLY lossless, not merely measured: values are k/255,
+quantising at frac=8 computes floor(k*256/255), which is strictly increasing over k = 0..255, so
+order is preserved and no encoder bit (all of them order comparisons) can change.
 
-  fractional bits NOT derivable from the checkpoint. How much precision the input needs depends
-                  on whether quantisation changes predictions, which depends on the DATA. The
-                  study learned this the expensive way: a narrowing was fitted and
-                  validated on the same 1,000 samples, and 8 of 15 features came out too narrow
-                  when checked against held-out data.
-
-So the tool asks for `--input-bits`: the precision of the INPUT, which is a fact the user
-actually possesses. Fractional bits fall out of it.
-
-WHY THAT IS BETTER THAN A GUESS. When an input has a native quantum -- 8-bit pixels, most ADCs,
-anything already digital -- `frac = input_bits` is PROVABLY lossless, not merely measured. Take
-8-bit pixels scaled to [0,1], i.e. values k/255 for integer k. Quantising at frac=8 computes
-floor(k * 256/255), which is strictly increasing over k = 0..255. Strictly increasing means
-order is preserved exactly, and since every encoder bit is an order comparison `x > t`, no bit
-can change. The study's MNIST port is the empirical confirmation: 0 of 10,000 samples
-diverged, which is what a proof predicts.
-
-A continuous input has no such quantum, and then there is no proof to be had -- only a default
-and a measurement. Say so out loud rather than presenting a fitted number as a safe one.
+A continuous input has no such quantum and gets a default, which must be reported as a default
+rather than presented as a safe measurement.
 """
 
 from dataclasses import dataclass
