@@ -74,6 +74,21 @@ RESULT   PASS
 **`verify` is not a formality.** Until a simulator has printed PASS, the emitted design is
 unproven — an emitter's own read-back is not evidence. Run it every time.
 
+### Why two levels
+
+`dwn_core_tb` drives pre-binarized bits; `dwn_top_tb` drives quantized features through the
+encoder as well. The split makes a failure **localize itself**, and `verify` says so out loud when
+it happens:
+
+| | |
+|---|---|
+| core PASS, top FAIL | the encoder — nothing else needs re-examining |
+| core FAIL, top FAIL | the network; fix that and this follows |
+
+**Nothing that was not checked is reported as a pass.** A missing testbench, an empty one, a
+compile error, a simulation that did not finish, or a directory with no runnable levels at all —
+each is a failure, not a skip.
+
 ---
 
 ## 3. Saving your model so the tool can read it
@@ -315,10 +330,33 @@ yosys 0.68+64
 ```
 
 **This is an estimate from generic mapping, not your vendor toolchain**, and the tool says so
-every time it prints. Calibrated once against Vivado on an xc7a35t: the *core* agreed exactly, and
-the *encoder* came out about 2.1× low, because generic mapping packs comparators more tightly than
-a carry-chain architecture does. Treat core numbers as indicative, encoder numbers as a floor, and
-synthesize for anything you intend to publish.
+every time it prints. That caveat is not a disclaimer — it is a measurement. The same design has
+real Vivado figures in the study repo, so the estimator was calibrated against them before it was
+trusted with anything:
+
+| module | yosys | Vivado, `xc7a35t` | |
+|---|---|---|---|
+| `dwn_core` | 110 | **110** | exact — a LUT core is LUT6s, and both tools find the same ones |
+| `thermometer_encoder` | 717 | **1519** | **0.47×** — generic mapping packs comparators; Vivado puts them on carry chains |
+| `dwn_top` | 833 | **1621** | 0.51× |
+
+Treat core numbers as indicative, encoder numbers as a floor, and synthesize for anything you
+intend to publish.
+
+⚠️ **Two different levels of trust in one design**, which is why the numbers are never summed into
+a single figure. It also cuts against this project's own headline: the encoder-to-core ratio is
+**13.8× by Vivado and 6.5× by yosys**, so a tool that printed the yosys ratio bare would
+understate the very thing it exists to show.
+
+**An unmapped design is an error, not a small number.** If generic gate primitives survive LUT
+mapping, the count is a fragment of the design rather than its size — yosys 0.33 once reported
+*one LUT for a 21-node core* — so `estimate` names the yosys version and refuses. Same rule as
+`verify`, one level up: nothing unmeasured is reported as a measurement.
+
+> Requires yosys, which you install yourself — `apt install yosys`, or the
+> [OSS CAD Suite](https://github.com/YosysHQ/oss-cad-suite-build/releases) on Windows.
+> Don't put the suite on PATH: it ships its own `iverilog` and would shadow the simulator your
+> gate runs against. dwn2rtl finds it either way.
 
 **The encoder is always reported separately, and it always ships.** It is intrinsic to a DWN, not
 preprocessing. On the smallest studied model it is 14× the network it feeds — work that quotes
