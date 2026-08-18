@@ -21,7 +21,7 @@ WHAT IS ACCEPTED, and why three shapes rather than one:
 
     {'model': nn.Module, 'thermometer': ...}     plain torch.save -- the documented primary
                                                  path, requiring no dwn2rtl import at all
-    {config, state_dict, thermometer, results}   the study repo's existing checkpoints, which
+    {config, state_dict, thermometer, results}   the earlier implementation's existing checkpoints, which
                                                  are the published evidence this generator works
     a live model + thermometer                   from_model(), for the moment training ends
 
@@ -116,7 +116,7 @@ def _scaler_of(obj, n_features):
     apply the SAME scaling with the SAME fitted parameters before quantizing -- and if it does
     not, the design runs at chance while looking entirely healthy doing it.
 
-    Dropping it silently was a real defect, found by testing against a real study-repo
+    Dropping it silently was a real defect, found by testing against a real earlier
     checkpoint: JSC carries {'mean', 'scale'} and the normalized form threw it away, while the
     emitted encoder's own header claimed "the checkpoint carries the scaler for this reason".
     A user following that instruction would have found nothing to follow it with.
@@ -340,7 +340,7 @@ def normalize(obj, source=None):
     """
     where = f' (from {source})' if source else ''
 
-    # 1. Already ours -- the study repo's checkpoints land here unchanged.
+    # 1. Already ours -- the earlier implementation's checkpoints land here unchanged.
     if isinstance(obj, Mapping) and 'config' in obj and 'state_dict' in obj:
         if 'thermometer' not in obj:
             raise _bare_state_dict_error(obj['state_dict'])

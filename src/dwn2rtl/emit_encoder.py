@@ -2,7 +2,7 @@
 
 The encoder is the piece published DWN resource totals leave out. They exclude the binarization
 front end entirely, and Mecik & Kumm measured that omission at up to 3.2x the reported LUTs. On
-a large part it may not matter; on a small one it can dominate. In the study repo's smallest
+a large part it may not matter; on a small one it can dominate. In the earlier implementation's smallest
 model the encoder was FOURTEEN TIMES the network it fed -- 50 LUT6 nodes against 202
 comparators.
 
@@ -19,7 +19,7 @@ Only the thermometer bits some node actually reads are given a comparator. The r
 vector is tied low: no node reads them, so they cost nothing after synthesis, and keeping the
 full width means dwn_core does not have to change to match.
 
-Ported from the study repo's `rtlgen/emit_encoder.py`. Changes: the CLI `main()` became
+Ported from the earlier implementation's `rtlgen/emit_encoder.py`. Changes: the CLI `main()` became
 `build_encoder()`; the dataset lookup that supplied default word/frac widths is gone, and both
 are now REQUIRED arguments (see precision.py for where they come from); and two emitted Verilog
 comments that hardcoded one model's numbers now carry the actual ones.
@@ -124,7 +124,7 @@ def emit_top(ck, out_path, total_bits, n_features, num_classes, core_latency,
     L.append('// Pipelined: quantized features in, class index out, one result per clock')
     L.append('// (II=1). Latency is PIPE_ENC + the core\'s own stages.')
     L.append('//')
-    # These counts are this model's, read from its own wiring. They were literals in the study
+    # These counts are this model's, read from its own wiring. They were literals in the earlier
     # repo -- "202" and "3200" -- which meant every emitted design carried the first model's
     # numbers in its header no matter what it actually was. A comment cannot break a design,
     # but a comment that confidently states someone else's numbers is worse than no comment.
@@ -199,7 +199,7 @@ def verify_emitted(path, used, thr_q, z, word):
 def build_encoder(ck, outdir, precision, pipe_enc=1):
     """Emit thermometer_encoder.v + dwn_top.v + dwn_top_params.vh, then read back and check.
 
-    Replaces the study repo's argparse `main()`. `precision` is a precision.Precision -- there
+    Replaces the earlier implementation's argparse `main()`. `precision` is a precision.Precision -- there
     is no default and no dataset lookup behind it, because a caller that does not know the word
     width does not know enough to emit an encoder.
 

@@ -2,7 +2,7 @@
 
 THIS IS THE GATE, and it is the reason the tool is worth using rather than rolling your own
 (CLAUDE.md). Emitted RTL is not correct until a simulator says it matches the golden model on
-every vector. Not "looks right", not "the emitter's read-back passed" -- the study repo has a
+every vector. Not "looks right", not "the emitter's read-back passed" -- the earlier implementation has a
 case where an emitter's own read-back reported 20/20 correct while the design was wrong on 958
 of 1,504 vectors.
 

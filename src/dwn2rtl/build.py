@@ -128,7 +128,7 @@ def _copy_package_rtl(outdir):
     """Put the hand-written Verilog beside the emitted Verilog.
 
     Read and written as BYTES. Text mode on Windows rewrites \\n to \\r\\n on the way out, and
-    the study repo lost a week to CRLF breaking multi-line string matching -- there is no reason
+    the earlier implementation lost a week to CRLF breaking multi-line string matching -- there is no reason
     for a copy to alter a file at all.
     """
     rtl = files('dwn2rtl') / 'rtl'
@@ -168,7 +168,7 @@ def build(checkpoint, outdir, input_bits=None, pipeline=None, n_random=None, see
     input_bits   the INPUT's precision -- 8-bit pixels -> 8. Never fractional bits; see
                  precision.py. None means a continuous input, which takes a default and is
                  reported as unproved rather than presented as safe.
-    pipeline     a config.Pipeline. The default is the study repo's shipped depth, chosen by
+    pipeline     a config.Pipeline. The default is the earlier implementation's shipped depth, chosen by
                  measurement rather than intuition.
     """
     from . import checkpoint as ckpt

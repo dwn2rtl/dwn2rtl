@@ -4,7 +4,7 @@ WHAT THIS IS FOR: answering "will this fit?" before committing to a real synthes
 not a substitute for one, and the numbers below are calibrated evidence of exactly how much it
 is not.
 
-⚠️ THE CALIBRATION, MEASURED BEFORE THIS FILE WAS WRITTEN (docs/phase4-ledger.md §3). The study
+⚠️ THE CALIBRATION, MEASURED BEFORE THIS FILE WAS WRITTEN (docs/phase4-ledger.md §3). An earlier iteration
 repository has real Vivado figures for JSC `1x50` on an xc7a35t, so the same design was estimated
 here and compared:
 
@@ -27,8 +27,8 @@ a total as a vendor number, and it must never let the encoder-to-core ratio pass
 that ratio is 13.8x by Vivado and 6.5x here, and understating it would undercut the one finding
 this whole project exists to publicise.
 
-WHY NOT AN AREA MODEL: roadmap Q7. The study built one, and across two completed studies it
-filtered zero configurations. This shells out to a real synthesis tool or it reports nothing.
+WHY NOT AN AREA MODEL: roadmap Q7. An earlier iteration built one, and across two completed
+studies it filtered zero configurations. This shells out to a real synthesis tool or it reports nothing.
 """
 
 import os
