@@ -70,6 +70,6 @@ testpaths = ["tests"]
 markers = [
     "sim: needs a Verilog simulator on PATH -- this is the gate (CLAUDE.md)",
     "yosys: needs yosys installed. Skips when absent, like the sim marker -- estimate is optional by design",
-    "lint: needs verilator. Lints the emitted design -- catches malformed-for-another-tool, which the gate cannot",
+    "verilator: needs verilator. Lints the emitted design and re-runs the gate under a second simulator -- both catch things iverilog alone cannot",
     "real: needs a local set of real trained checkpoints, far too large to commit. Skips when absent, so CI is unaffected. DWN2RTL_STUDY=<dir> points at them; DWN2RTL_REAL=all lifts the size and count caps",
 ]

@@ -206,14 +206,14 @@ jobs:
           print('yosys:', y.describe())
           PY
 
-      # Same reasoning again: on a runner where verilator was just installed, a skipped lint
-      # test means the install achieved nothing and the check silently did not run.
+      # Same reasoning again: on a runner where verilator was just installed, a skipped test
+      # means the install achieved nothing and the check silently did not run.
       #
-      # ⚠️ LINT IS NOT A SECOND GATE. It answers a different question -- whether the emitted
-      # files are well-formed for a tool the gate does not run -- and that gap is not
-      # hypothetical: a comment beginning with the word "verilator" is read as a pragma, which
-      # made --lint-only an ERROR while iverilog printed PASS on the same files.
-      - name: The lint tests can actually run (Linux)
+      # Verilator does two jobs here, neither of them the gate. It LINTS -- a comment beginning
+      # with the word "verilator" is read as a pragma, which made --lint-only an ERROR while
+      # iverilog printed PASS on the same files -- and it re-runs the gate as a SECOND
+      # implementation, since the gate's one weakness is having a single simulator behind it.
+      - name: The verilator tests can actually run (Linux)
         if: runner.os == 'Linux'
         shell: bash
         run: |

@@ -84,9 +84,9 @@ def pytest_collection_modifyitems(config, items):
                 item.add_marker(skip)
     if VERILATOR is None:
         # Optional like yosys: linting is a second opinion, not the correctness signal.
-        skip = pytest.mark.skip(reason='no verilator -- lint is a second opinion, not the gate')
+        skip = pytest.mark.skip(reason='no verilator -- a second opinion, not the gate')
         for item in items:
-            if 'lint' in item.keywords:
+            if 'verilator' in item.keywords:
                 item.add_marker(skip)
 
 
