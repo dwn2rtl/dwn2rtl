@@ -1,5 +1,10 @@
 # dwn2rtl
 
+[![PyPI](https://img.shields.io/pypi/v/dwn2rtl.svg)](https://pypi.org/project/dwn2rtl/)
+[![Python](https://img.shields.io/pypi/pyversions/dwn2rtl.svg)](https://pypi.org/project/dwn2rtl/)
+[![CI](https://github.com/dwn2rtl/dwn2rtl/actions/workflows/ci.yml/badge.svg)](https://github.com/dwn2rtl/dwn2rtl/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/licence-MIT-blue.svg)](https://github.com/dwn2rtl/dwn2rtl/blob/main/LICENSE)
+
 **A trained Differentiable Weightless Neural Network goes in. Synthesizable Verilog comes out —
 along with the means to prove, in your own simulator, that the Verilog computes the same function
 as the model.**
