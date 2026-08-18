@@ -11,6 +11,7 @@ pip install git+https://github.com/Krithik4/dwn2rtl.git
 ```bash
 dwn2rtl build model.pt --out rtl/
 dwn2rtl verify rtl/
+dwn2rtl estimate rtl/        # optional, needs yosys
 ```
 
 ```
@@ -53,7 +54,8 @@ verification, which is the part most tools make you take on trust.
 | checkpoint → truth tables, wiring, thresholds | the board harness — UART, vector store, FSM |
 | the thermometer encoder, the LUT core, a top wiring them | design-space sweeps |
 | a numpy golden model | training, tuning, or architecture choice |
-| **self-checking testbenches and golden vectors** | area models — see [why](docs/tool-roadmap.md) |
+| **self-checking testbenches and golden vectors** | area *models* that predict it — see [why](docs/tool-roadmap.md) |
+| optional area from a real synthesis tool, calibrated | vendor toolchains, licences, or a board |
 
 **The encoder always ships, and its cost is always reported separately from the network's.** It
 is intrinsic to a DWN, not preprocessing you supply, and on the smallest model in the study below
@@ -180,6 +182,55 @@ encoder as well. The split makes a failure **localize itself**:
 **And nothing that was not checked is reported as a pass.** A missing testbench, an empty one, a
 compile error, a simulation that did not finish, or a directory with no runnable levels at all —
 each is a failure, not a skip.
+
+## Will it fit?
+
+`dwn2rtl estimate` synthesizes the emitted design with [yosys](https://github.com/YosysHQ/yosys)
+and reports LUTs and flops **per module** — so the encoder's cost never disappears into a total.
+It is the one optional command: `build` and `verify` need no synthesis tool, and `estimate`
+skips cleanly when yosys is absent.
+
+```
+$ dwn2rtl estimate rtl/
+yosys 0.68+64 (C:\oss-cad-suite\bin\yosys.exe)
+
+  thermometer_encoder       717 LUT        0 FF
+  dwn_core                  110 LUT        0 FF
+  dwn_top                   833 LUT        0 FF
+
+  the encoder is 6.5x the core, as generic mapping sees it
+
+ESTIMATE -- yosys generic mapping, not your vendor toolchain.
+Calibrated once against Vivado on xc7a35t (docs/phase4-ledger.md): the CORE agreed
+EXACTLY, the ENCODER came out 2.1x LOW because generic mapping packs comparators
+more tightly than a carry-chain architecture does. Treat core numbers as indicative,
+encoder numbers as a floor, and synthesize for figures you can publish.
+```
+
+**That caveat prints with every report, and it is the point of the command.** It is not a
+disclaimer — it is a measurement. The same design has real Vivado figures in the study repo, so
+the estimator was calibrated against them before it was trusted with anything:
+
+| module | yosys | Vivado, `xc7a35t` | |
+|---|---|---|---|
+| `dwn_core` | 110 | **110** | exact — a LUT core is LUT6s, and both tools find the same ones |
+| `thermometer_encoder` | 717 | **1519** | **0.47x** — generic mapping packs comparators; Vivado puts them on carry chains |
+| `dwn_top` | 833 | **1621** | 0.51x |
+
+⚠️ **Two different levels of trust in one design**, which is why the numbers are never summed
+into a single figure. It also cuts against this project's own headline: the encoder-to-core ratio
+is **13.8x by Vivado and 6.5x by yosys**, so a tool that printed the yosys ratio bare would
+understate the very thing it exists to show.
+
+**And an unmapped design is an error, not a small number.** If generic gate primitives survive
+LUT mapping, the count is a fragment of the design rather than its size — yosys 0.33 once
+reported *one LUT for a 21-node core* — so `estimate` names the yosys version and refuses.
+Same rule as `verify`, one level up: nothing unmeasured is reported as a measurement.
+
+> Requires yosys, which you install yourself — `apt install yosys`, or the
+> [OSS CAD Suite](https://github.com/YosysHQ/oss-cad-suite-build/releases) on Windows.
+> Don't put the suite on PATH: it ships its own `iverilog` and would shadow the simulator your
+> gate runs against. dwn2rtl finds it either way.
 
 ## Evidence
 
