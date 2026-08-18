@@ -2,9 +2,14 @@
 
 > ## ⚠️ HISTORICAL — superseded by `overview.md` §6 and the phase ledgers
 >
-> **This was the work list for building the tool, and most of it is done.** Phases 0–3 are
-> closed; the remaining live work is tracked in **`docs/phase4-ledger.md`**, not here. Nothing
-> in this file should be picked up as a task without checking it there first.
+> **This was the work list for building the tool, and it is done.** Phases 0–5 are closed and
+> `dwn2rtl 0.1.0` is on PyPI. There is no live phase ledger; `overview.md` §6 has the map and
+> `phase5-report.md` §6 lists what remains, all of it optional. Nothing in this file should be
+> picked up as a task without checking there first.
+>
+> **P1–P8** (fork, package, licence, CI, publish) and **Q4** (the name, and where it lives —
+> `dwn2rtl`, at `github.com/dwn2rtl/dwn2rtl`) are resolved, though the §8 status block below
+> still shows them pending: it is a snapshot of what was known then, and is left as one.
 >
 > It stays because it is the **reasoning archive**: the `V*`/`P*`/`Q*` items record why the
 > project does *not* do certain things, and those arguments are still load-bearing. Q7 (no area

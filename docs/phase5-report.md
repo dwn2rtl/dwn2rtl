@@ -135,8 +135,9 @@ situation deserves.
 
 ## 5. Roadmap movement
 
-- **P1–P8 — fork, package, licence, CI, publish** ✅ complete. The `AFTER` column of
-  `tool-roadmap.md` §8 is now empty.
+- **P1–P8 — fork, package, licence, CI, publish** ✅ complete. Every item the `AFTER` column of
+  `tool-roadmap.md` §8 listed is done. That block still *shows* them pending and is deliberately
+  left alone — it is a historical snapshot, so the correction went in the file's banner instead.
 - **Q4 — the name, and where it lives** ✅ resolved: `dwn2rtl`, claimed on PyPI, at
   `github.com/dwn2rtl/dwn2rtl`.
 - **Q3 — upstream-version policy** remains **OPEN**. Publishing did not settle it and did not
