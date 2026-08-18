@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dwn2rtl"
-version = "0.1.0rc1"
+version = "0.1.0"
 description = "Turn a trained Differentiable Weightless Neural Network into synthesizable Verilog, and prove the Verilog matches the model"
 readme = "README.md"
 # Names without addresses, deliberately. PyPI renders these on a public, heavily scraped page

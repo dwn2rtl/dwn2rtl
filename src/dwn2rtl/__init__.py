@@ -17,7 +17,7 @@ Keeping that boundary sharp is also what would make a torch-free path possible l
 .npz intermediate, without rewriting anything downstream.
 """
 
-__version__ = '0.1.0rc1'
+__version__ = '0.1.0'
 
 # Phase 0 exposes only what exists and works standalone -- the precision policy and the build
 # configuration, neither of which needs a checkpoint or torch.
