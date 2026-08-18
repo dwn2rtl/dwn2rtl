@@ -6,9 +6,9 @@ when yosys is absent (conftest handles the `yosys` marker). That is a real diffe
 without yosys is simply a supported machine.
 
 The theme here is the same as verify.py's, one level up: **a number must not outrun its
-evidence.** Yosys agrees with Vivado to 4% on the core and is 2.1x low on the encoder
-(docs/phase4-ledger.md §3), so the report is required to say so rather than presenting one
-figure with the authority of the other.
+evidence.** Yosys agrees with Vivado exactly on the core and is 2.1x low on the encoder
+(docs/phase4-ledger.md §3, corrected in §7), so the report is required to say so rather than
+presenting one figure with the authority of the other.
 """
 
 import os
@@ -165,7 +165,7 @@ def test_unmapped_gates_are_an_error_not_a_number():
 
 @pytest.mark.yosys
 def test_the_report_states_what_the_numbers_are_worth(built):
-    """Calibrated: core within 4%, encoder 2.1x low. A report that omitted this would let the
+    """Calibrated: core exact, encoder 2.1x low. A report that omitted this would let the
     encoder figure be read with the core figure's authority."""
     text = '\n'.join(estimate(built).lines())
     assert 'ESTIMATE' in text
@@ -177,7 +177,7 @@ def test_the_report_states_what_the_numbers_are_worth(built):
 @pytest.mark.yosys
 def test_the_encoder_to_core_ratio_is_qualified(built):
     """The project's headline finding is that the encoder can dominate -- 13.8x on the studied
-    model. Yosys sees 6.8x on that same design, so printing the ratio bare would UNDERSTATE the
+    model. Yosys sees 6.5x on that same design, so printing the ratio bare would UNDERSTATE the
     very thing the tool exists to publicise."""
     text = '\n'.join(estimate(built).lines())
     assert 'the encoder is' in text

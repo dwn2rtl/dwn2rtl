@@ -8,18 +8,23 @@ is not.
 repository has real Vivado figures for JSC `1x50` on an xc7a35t, so the same design was estimated
 here and compared:
 
-    dwn_core              106 yosys   vs   110 Vivado    0.96x   trustworthy
+    dwn_core              110 yosys   vs   110 Vivado    1.00x   trustworthy
     thermometer_encoder   717 yosys   vs  1519 Vivado    0.47x   HALF
-    dwn_top               838 yosys   vs  1621 Vivado    0.52x
+    dwn_top               833 yosys   vs  1621 Vivado    0.51x
 
-The core agrees within 4%. The encoder is out by 2.1x, and not because yosys is wrong: a 16-bit
+⚠️ ~~core 106, 0.96x, top 838~~ -- withdrawn (docs/phase4-ledger.md §7). Those came from
+`synth -flatten`; the explicit `hierarchy; flatten` pass this file now runs lands the core on
+Vivado EXACTLY. The correction is small but it runs the other way to the usual: the tool agrees
+with the vendor better than it used to claim.
+
+The core agrees exactly. The encoder is out by 2.1x, and not because yosys is wrong: a 16-bit
 signed comparison against a constant genuinely fits in ~3 LUT6s, which is what generic mapping
 finds, while Vivado on 7-series maps comparators onto carry chains that cost more LUTs. Generic
 mapping is simply optimistic for comparator-heavy logic.
 
 So this module reports per-module counts and says which half to believe. It must never present
 a total as a vendor number, and it must never let the encoder-to-core ratio pass unqualified --
-that ratio is 13.8x by Vivado and 6.8x here, and understating it would undercut the one finding
+that ratio is 13.8x by Vivado and 6.5x here, and understating it would undercut the one finding
 this whole project exists to publicise.
 
 WHY NOT AN AREA MODEL: roadmap Q7. The study built one, and across two completed studies it
@@ -197,7 +202,7 @@ class EstimateReport:
             '',
             'ESTIMATE -- yosys generic mapping, not your vendor toolchain.',
             'Calibrated once against Vivado on xc7a35t (docs/phase4-ledger.md): the CORE agreed',
-            'within 4%, the ENCODER came out 2.1x LOW because generic mapping packs comparators',
+            'EXACTLY, the ENCODER came out 2.1x LOW because generic mapping packs comparators',
             'more tightly than a carry-chain architecture does. Treat core numbers as indicative,',
             'encoder numbers as a floor, and synthesize for figures you can publish.',
         ]
