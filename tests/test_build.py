@@ -1,10 +1,8 @@
 """build() -- checkpoint in, a self-contained design directory out.
 
-The tests marked `sim` are THE GATE (CLAUDE.md). Everything else in this file checks that the
-right files appeared with the right numbers in them; only the simulator checks that the Verilog
-COMPUTES the right thing. The distinction is not pedantic -- the study repo has a case where an
-emitter's own read-back reported 20/20 correct while the design was wrong on 958 of 1,504
-vectors. Structural tests cannot close that gap and should not be mistaken for having done so.
+⚠️ The tests marked `sim` are THE GATE. Everything else checks the right files appeared with the
+right numbers in them; only the simulator checks the Verilog COMPUTES the right thing, and an
+emitter's own read-back once reported 20/20 while the design was wrong on 958 of 1,504 vectors.
 
     pytest -m sim        run only the gate
     pytest -m "not sim"  skip it (no simulator installed)
@@ -56,12 +54,9 @@ def test_testbenches_land_in_a_subdirectory(tmp_path):
 
 
 def test_every_testbench_is_either_copied_or_warned_about(tmp_path):
-    """A zero-byte file in tb/ would make the directory LOOK complete while that level's gate
-    silently does nothing -- the "green light nobody has reason to distrust" failure.
-
-    Both testbenches are real as of phase 1, so this now asserts both are copied and no warning
-    fires. It stays as an invariant rather than being deleted: the guard is what stops a future
-    empty or truncated testbench shipping unnoticed.
+    """A zero-byte file in tb/ would make the directory look complete while that level's gate does
+    nothing. Both are real now, so this asserts both copied and no warning -- kept as the guard
+    against a future truncated one.
     """
     r = build(fixtures.make('tiny'), str(tmp_path / 'rtl'), input_bits=8)
     empty = [w for w in r.warnings if 'EMPTY' in w]
@@ -201,12 +196,9 @@ def test_encoder_before_core_is_refused(tmp_path):
 
 
 def test_vectors_and_rtl_come_from_the_same_extraction(tmp_path):
-    """THE invariant (CLAUDE.md). build_core hands its extracted layers to generate() rather
-    than letting it re-read the checkpoint, so a testbench cannot end up labelled by a
-    different reading than the one the RTL was emitted from.
-
-    Checked by proving the outputs move together: a different checkpoint must change both the
-    emitted core and the expected outputs, never just one.
+    """THE invariant: build_core hands its layers to generate() rather than letting it re-read the
+    checkpoint. Proved by moving together -- a different checkpoint must change both the emitted
+    core and the expected outputs, never one.
     """
     a = build(fixtures.make('tiny', seed=11), str(tmp_path / 'a'), input_bits=8)
     b = build(fixtures.make('tiny', seed=23), str(tmp_path / 'b'), input_bits=8)
@@ -231,15 +223,9 @@ def test_a_rebuild_is_byte_identical(tmp_path):
 
 
 def test_a_degenerate_model_is_warned_about(tmp_path):
-    """Every vector landing on one class means the testbench would pass against a design whose
-    argmax, popcount and grouping were all wrong. Reported, not raised -- a genuinely lopsided
-    model is legitimate, and this tool does not get to reject someone's trained weights.
-
-    Degeneracy is CONSTRUCTED here, not fished for with seeds: making every final-layer table
-    all-positive makes every node output 1, so every class scores the group size, every vector
-    ties, and the argmax returns class 0 forever. An earlier version of this test hunted for a
-    degenerate seed and skipped when it did not find one -- a test that silently does not run
-    is indistinguishable from one that passes.
+    """Every vector landing on one class would pass a testbench against a design whose argmax,
+    popcount and grouping were all wrong. Reported, not raised -- a lopsided model is legitimate.
+    Degeneracy is CONSTRUCTED, not fished for with seeds.
     """
     import torch
     ck = fixtures.make('tiny')
@@ -294,11 +280,8 @@ def test_gate_core_is_bit_exact(shape, tmp_path):
 @pytest.mark.sim
 @pytest.mark.parametrize('shape', ALL_SHAPES)
 def test_gate_top_is_bit_exact(shape, tmp_path):
-    """GATE 1, top level. Quantized FEATURES through the thermometer encoder and the core.
-
-    This is the half that checks the encoder, which is the part published DWN resource counts
-    leave out and which on the smallest studied model is fourteen times the network it feeds.
-    An unverified encoder is most of an unverified design.
+    """GATE 1, top level: quantized features through the encoder and the core. This is the half
+    that checks the encoder, which is most of an unverified design when it is unverified.
     """
     r = build(fixtures.make(shape), str(tmp_path / 'rtl'), input_bits=8)
     stdout = run_gate(r.outdir, os.path.join('tb', 'dwn_top_tb.v'))
@@ -327,11 +310,8 @@ def test_the_two_levels_test_different_things(tmp_path):
 
 @pytest.mark.sim
 def test_a_broken_encoder_fails_only_the_top_gate(tmp_path):
-    """The localization claim, proved rather than asserted in a comment.
-
-    Corrupt a comparator constant and the core -- which is driven by pre-binarized bits and
-    never sees the encoder -- must still PASS, while the top level FAILS. If both failed, or
-    neither, the two-testbench split would be buying nothing.
+    """The localization claim, proved rather than asserted. Corrupt a comparator constant: the core
+    must still PASS and the top must FAIL, or the two-testbench split buys nothing.
     """
     r = build(fixtures.make('n6'), str(tmp_path / 'rtl'), input_bits=8)
     enc = os.path.join(r.outdir, 'thermometer_encoder.v')
@@ -352,11 +332,8 @@ def test_a_broken_encoder_fails_only_the_top_gate(tmp_path):
 
 @pytest.mark.sim
 def test_gate_reports_a_real_failure(tmp_path):
-    """The gate must be capable of FAILING, or a PASS means nothing.
-
-    A testbench that passes unconditionally is worse than none, so one truth table is corrupted
-    after emission and the gate is required to notice. Without this, every other sim test in
-    this file could be green against a testbench that never checks anything.
+    """The gate must be capable of FAILING, or a PASS means nothing. One truth table is corrupted
+    after emission and the gate is required to notice.
     """
     r = build(fixtures.make('tiny'), str(tmp_path / 'rtl'), input_bits=8)
     core = os.path.join(r.outdir, 'dwn_core.v')

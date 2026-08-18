@@ -98,13 +98,9 @@ def test_learnable_layers_carry_the_dummy_mapping_decoy():
 
 
 def test_the_decoy_is_not_what_the_extractor_returns():
-    """docs/checkpoint-format.md §3: keying off tensor shape instead of off `.mapping.weights`
-    reads the decoy and emits a structurally valid, COMPLETELY WRONG model.
-
-    The decoy has the same (output_size, n) shape and int dtype as a genuine fixed mapping, so
-    nothing about its type gives it away. It is only arange() reshaped. This test asserts the
-    extractor returns the argmax-derived wiring instead -- and that the two actually differ, so
-    the test cannot pass by coincidence.
+    """Keying off tensor shape instead of `.mapping.weights` reads the decoy and emits a structurally
+    valid, completely wrong model -- it has the same shape and dtype, and is only arange()
+    reshaped. Asserts the two actually differ, so this cannot pass by coincidence.
     """
     ck = fixtures.make('tiny')
     n, out_size = ck['config']['n'], ck['config']['layers'][0]
@@ -151,11 +147,8 @@ def test_both_mapping_representations_appear_in_the_default_shape():
 
 @pytest.mark.parametrize('shape', ALL_SHAPES)
 def test_every_shape_discriminates_all_of_its_classes(shape):
-    """A fixture that always answers the same class would pass a testbench against a design
-    whose argmax, popcount and grouping were all wrong, because the right answer is a constant.
-
-    The first cut of fixtures.py did exactly this -- groups of 2, untrained tables, and every
-    vector landing on one class. Groups are >= 3 now and make() searches seeds.
+    """A fixture answering one class always would pass a testbench against a wrong design, because
+    the right answer is a constant. The first cut of fixtures.py did exactly that.
     """
     ck = fixtures.make(shape)
     K = ck['config']['num_classes']

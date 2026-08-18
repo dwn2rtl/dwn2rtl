@@ -1,14 +1,10 @@
 """estimate.py -- shell out to yosys, and be honest about what the number is worth.
 
-`estimate` is the only feature the roadmap itself calls OPTIONAL, so these tests skip cleanly
-when yosys is absent (conftest handles the `yosys` marker). That is a real difference from the
-`sim` marker: a machine without a simulator cannot verify and that is a problem, while a machine
-without yosys is simply a supported machine.
+These skip cleanly without yosys, unlike the `sim` marker: a machine without a simulator cannot
+verify, while a machine without yosys is simply supported.
 
-The theme here is the same as verify.py's, one level up: **a number must not outrun its
-evidence.** Yosys agrees with Vivado exactly on the core and is 2.1x low on the encoder
-(docs/phase4-ledger.md §3, corrected in §7), so the report is required to say so rather than
-presenting one figure with the authority of the other.
+The theme is verify.py's one level up -- a number must not outrun its evidence. Yosys matches
+Vivado exactly on the core and reads 2.1x low on the encoder, so the report has to say so.
 """
 
 import os
@@ -34,10 +30,8 @@ def built(tmp_path):
 def test_find_yosys_returns_something_that_reports_a_version():
     """A version string is the proof it actually RAN.
 
-    ⚠️ The OSS CAD Suite's yosys, invoked by absolute path with a clean environment, prints
-    nothing and exits 0 -- a silent no-op. Every measurement from it would be empty and would
-    look like a very small design. find_yosys therefore rejects any candidate that cannot report
-    a version, rather than returning the first file that exists.
+    ⚠️ Invoked by absolute path with a clean environment, the suite's yosys prints nothing and
+    exits 0 -- every measurement from it would look like a very small design.
     """
     y = find_yosys()
     assert os.path.exists(y.exe)
@@ -105,16 +99,8 @@ def test_the_top_is_bigger_than_either_half(built):
 
 @pytest.mark.yosys
 def test_the_pipeline_registers_show_up_as_flops(tmp_path):
-    """The measurement that decides whether an emitted register costs anything.
-
-    PIPE_ENC toggles a register nominally as wide as the whole thermometer vector. Turning it
-    off must remove flops -- if it did not, the emitter's pipeline parameters would not be
-    reaching the synthesised design at all.
-
-    It deliberately does NOT assert how many. Measured on MNIST, that register costs 552 flops
-    for 2,352 nominal bits of which 720 are driven -- synthesis trims it below even the driven
-    count, because duplicate comparators share. Pinning a number here would pin one tool's
-    optimiser.
+    """Turning PIPE_ENC off must remove flops, or the pipeline parameters never reached the
+    synthesised design. Deliberately does not assert how many -- that would pin one optimiser.
     """
     from dwn2rtl import Pipeline
     ck = fixtures.make('n6')
@@ -130,16 +116,8 @@ def test_the_pipeline_registers_show_up_as_flops(tmp_path):
 
 @pytest.mark.yosys
 def test_a_successful_measurement_leaves_no_unmapped_gates(built):
-    """⚠️ The check that makes the number mean anything, and it was learned the hard way.
-
-    An earlier version asserted a LUT floor derived from the node count. That was unsound --
-    nodes whose outputs feed nothing are legitimately removed, so a low count can be correct --
-    and it failed on yosys 0.33 for the right reason with the wrong explanation.
-
-    What 0.33 actually did was report ONE LUT for a 21-node core while leaving the rest as
-    unmapped gate primitives, and the old code accepted that as a successful measurement. The
-    real invariant is therefore not "at least N LUTs" but "nothing left unmapped": if
-    `abc -lut 6` did not cover the design, the count is a fragment and must be an ERROR.
+    """⚠️ yosys 0.33 reported ONE LUT for a 21-node core while leaving the rest unmapped, and the old
+    code accepted it. The invariant is "nothing left unmapped", not "at least N LUTs".
     """
     core = estimate(built, modules=['dwn_core']).modules[0]
     assert core.status == 'OK', core.detail

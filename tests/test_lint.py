@@ -1,13 +1,10 @@
 """Lint the emitted design with Verilator.
 
-NOT a second gate. The gate proves the RTL computes what the golden model computes; this proves
-the files are well-formed for a tool the gate does not run. Those are different questions, and
-the difference is not hypothetical: a comment line beginning with the word "verilator" is parsed
-as a pragma, so prose after it is rejected as an unknown one. That made `--lint-only` fail with
-an ERROR while iverilog printed PASS on the same files.
+⚠️ Not a second gate. The gate proves the RTL computes the right thing; this proves the files
+are well-formed for a tool the gate does not run -- a comment beginning with the word
+"verilator" parses as a pragma, which made --lint-only an ERROR while iverilog printed PASS.
 
-Warnings are fatal here on purpose (no -Wno-fatal). Verilator's default is fatal, so a user who
-lints an emitted design sees an error -- if that is what they get, CI should get it too.
+Warnings are fatal here on purpose: that is what a user linting an emitted design gets.
 """
 
 import os
@@ -39,26 +36,17 @@ def built(tmp_path_factory):
 @pytest.mark.lint
 @pytest.mark.parametrize('top', TOPS)
 def test_the_emitted_design_lints_clean(built, top):
-    """Every emitted and shipped file, through a strict linter, with warnings fatal.
-
-    This is the check that would have caught the pragma bug above, and it covers the generated
-    files -- dwn_core.v, thermometer_encoder.v, dwn_top.v -- which no human reads before they
-    reach a user.
+    """Every emitted and shipped file through a strict linter, warnings fatal. Covers the generated
+    files, which no human reads before they reach a user.
     """
     r = _lint(built, top)
     assert r.returncode == 0, f'verilator lint failed on {top}:\n{r.stderr or r.stdout}'
 
 
 def test_no_comment_line_starts_with_the_pragma_word():
-    """⚠️ The specific trap, pinned at the source rather than only in a linter run.
-
-    `// verilator ...` and `/* verilator ... */` are PRAGMAS. A sentence that merely begins with
-    the word is read as one and rejected -- an error that stops linting while the gate stays
-    green, so nothing else in this suite would notice. Only the real pragmas may match.
-
-    Deliberately NOT marked `lint`: it is pure text, needs no verilator, and so runs on the
-    Windows jobs too -- which is where a contributor most likely writes the offending comment
-    and has no linter to catch it.
+    """⚠️ A sentence beginning with the pragma word is read as one and rejected -- an error that
+    stops linting while the gate stays green. Not marked `lint`: pure text, so it runs on Windows
+    too, where the offending comment gets written and no linter is installed.
     """
     import re
     from dwn2rtl.build import PRIMITIVES

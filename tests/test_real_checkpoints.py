@@ -1,35 +1,16 @@
-"""Opt-in regression against REAL checkpoints from the study repository.
+"""Opt-in regression against real checkpoints, which live outside this repo and skip when absent.
 
-WHAT "OPT-IN" MEANS HERE: these tests look for checkpoints that live outside this repo, and
-skip cleanly when they are not there. On a machine with the study repo they run; in CI they
-print `skipped` and nothing breaks. Nothing large is ever committed -- roadmap P8 puts real
-checkpoints at 17 MB to 471 MB, and the partial set on the development machine is 477 MB across
-11 files.
+They catch what synthetic fixtures cannot: JSC carries a fitted StandardScaler that normalize()
+was silently dropping, and no fixture had one. test_recorded_values_still_reproduce is the most
+valuable here -- those numbers came from a separate implementation months earlier and nothing
+was tuned to match them.
 
-WHY THEY ARE WORTH HAVING. The synthetic fixtures in fixtures.py test the paths we thought of.
-Real checkpoints caught something they could not: JSC carries a fitted StandardScaler that
-normalize() was silently discarding, and since no fixture had a scaler, nothing noticed. Per the
-emitted encoder's own header, that produces a design that runs at chance and looks entirely
-healthy doing it.
+    DWN2RTL_REAL=all pytest      every checkpoint found, however long it takes
+    DWN2RTL_STUDY=/path pytest   look somewhere specific
+    pytest -m "not real"         skip them even when present
 
-THE MOST VALUABLE TEST IN THIS FILE IS test_recorded_values_still_reproduce. Those numbers were
-measured by a SEPARATE implementation, months earlier, and are recorded in the study repo's
-documentation. Nothing here was tuned to match them. If a refactor moves any of them, that is a
-real regression and no synthetic fixture can catch it.
-
-RUNNING THEM
-
-    pytest                          runs the fast tier if the study repo is found
-    DWN2RTL_REAL=all pytest         runs every checkpoint found, however long it takes
-    DWN2RTL_STUDY=/path pytest      look somewhere specific
-    pytest -m "not real"            skip them even when present
-
-BUDGETS, AND WHY THERE ARE TWO. Simulation time scales with node count, and it is steep: the
-measured spread on nine real designs was 0.9 s at 50 nodes to 60.6 s at 3,000, with four large
-sweep models accounting for 168 s of a 186 s total. Filtering by size alone is not enough,
-because the study built 77 configurations -- a full local collection would be half an hour of
-simulation and hundreds of megabytes of reads. So the default tier caps BOTH the node count of
-any one design and the NUMBER of designs run.
+Two budgets, because simulation time is steep -- 0.9 s at 50 nodes against 60.6 s at 3,000 -- so
+the default tier caps both the size of any one design and how many run.
 """
 
 import os
@@ -92,11 +73,10 @@ def _search_root():
 
 
 def _discover():
-    """Checkpoints to run, reference models first, then the rest, then capped.
+    """Checkpoints to run: reference models first, then the rest, then capped.
 
-    Collection must not LOAD anything -- with 77 files that would be hundreds of megabytes read
-    just to decide what to skip. The node-count budget is applied inside each test instead,
-    after the one checkpoint it needs is loaded.
+    Collection must not LOAD anything -- with 77 files that is hundreds of megabytes read just to
+    decide what to skip. The node budget is applied inside each test instead.
     """
     root = _search_root()
     if not root:
@@ -161,13 +141,8 @@ def _skip_if_too_big(ck, stem):
 @requires_real
 @pytest.mark.parametrize('path', REAL, ids=_stem)
 def test_real_checkpoint_loads_unmodified(path):
-    """No conversion step, ever.
-
-    The study's checkpoints carry keys this tool does not use -- classes, feature_names,
-    pinned_commit, torch_version, grid_label -- and they must simply be ignored. This is the
-    whole reason checkpoint.py sniffs rather than insisting on one format: those files are the
-    published evidence the generator works, and requiring a migration to read them would put a
-    conversion step between the evidence and the tool.
+    """No conversion step, ever. These carry keys the tool does not use and must simply ignore --
+    requiring a migration would put a step between the evidence and the tool.
     """
     ck = load(path)
     assert ck['config']['num_classes'] >= 2
@@ -204,12 +179,9 @@ def test_real_checkpoint_builds_and_passes_the_gate(path, tmp_path):
 @requires_real
 @pytest.mark.parametrize('stem', sorted(RECORDED))
 def test_recorded_values_still_reproduce(stem, tmp_path):
-    """Numbers measured by a SEPARATE implementation, months earlier.
-
-    This is the highest-value test in the repo. It pins the precision policy, the comparator
-    count, the quantisation-merge count and the vector counts against values this code did not
-    produce and was not fitted to. A refactor that changes any of them is a real regression, and
-    the synthetic fixtures cannot notice because they have no independently-known answer.
+    """The highest-value test here: numbers measured by a SEPARATE implementation months earlier,
+    which this code was never fitted to. A refactor that moves any of them is a real regression,
+    and no synthetic fixture can notice.
     """
     path = next((p for p in REAL if _stem(p) == stem), None)
     if path is None:
@@ -236,11 +208,8 @@ def test_recorded_values_still_reproduce(stem, tmp_path):
 @requires_real
 @pytest.mark.parametrize('stem', sorted(RECORDED))
 def test_the_scaler_survives(stem, tmp_path):
-    """The defect real checkpoints found and fixtures could not.
-
-    Both reference models were trained on scaled features. normalize() used to drop the scaler,
-    so every design this tool emitted for them silently required an input transformation the
-    user had no way to learn. Now preserved, written out, and pointed at from the RTL.
+    """The defect real checkpoints found and fixtures could not: normalize() dropped the scaler, so
+    every emitted design silently required a transformation the user could not learn.
     """
     path = next((p for p in REAL if _stem(p) == stem), None)
     if path is None:

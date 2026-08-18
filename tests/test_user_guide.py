@@ -1,19 +1,10 @@
 """The recipes docs/user-guide.md hands to users, executed.
 
-⚠️ WHY THIS FILE EXISTS. The guide tells a user to re-label an emitted design with their own
-data, using `dwn2rtl.extract` and `dwn2rtl.vectors` -- INTERNAL modules with no public-API
-promise -- and then says the recipe "is tested and works today". That sentence was true of the
-individual functions and false of the recipe: nothing ran it end to end.
+The guide's re-labelling recipe uses `dwn2rtl.extract` and `dwn2rtl.vectors` -- internal modules
+with no API promise -- and claims it "is tested". It was not, so it is now: a rename there breaks
+this rather than silently invalidating published instructions.
 
-On a project whose central scar is an emitter's own read-back reporting 20/20 correct while the
-design was wrong on 958 of 1,504 vectors, a document claiming "tested" without a test is the
-same defect one level up. So the claim is made true here rather than softened: if a refactor
-changes any of those internal names or their signatures, this fails and the guide gets fixed
-with the code.
-
-The recipe is transcribed as literally as a test can manage. Where it says `x_raw = ...` this
-supplies data; everything else is the guide's own code, and it is meant to stay that way -- a
-"tidied" version would stop pinning the published text.
+Transcribed as literally as a test can manage; a tidied version would stop pinning the text.
 """
 
 import json
@@ -93,20 +84,11 @@ def test_the_relabelling_recipe_runs(tmp_path):
 
 @pytest.mark.sim
 def test_the_relabelled_design_still_passes_the_gate(tmp_path):
-    """⚠️ THE CLAIM THAT MATTERS. The guide says a PASS afterwards means *your data* was
-    reproduced bit-exactly -- so the recipe must produce vectors the emitted RTL agrees with.
+    """The guide says a PASS here means YOUR data was reproduced bit-exactly. Measured: quantising
+    thresholds one bit off gives 47 mismatches, so this has teeth.
 
-    A recipe that merely runs is not enough: quantise the thresholds at the wrong frac_bits, or
-    write the hex in the wrong nibble order, and every function still returns happily while the
-    testbench it wrote disagrees with the design. Measured, not assumed: quantising thresholds
-    one bit off gives **47 mismatches** here, so this assertion has teeth.
-
-    ⚠️ WHAT IT CANNOT CATCH, checked rather than hoped: **omitting the scaling still PASSES.**
-    The golden model is computed from the same `xq` that is written to x_quant.hex, so both
-    sides agree on whatever inputs are supplied -- correct behaviour, and exactly what the
-    README warns about ("raw features give a design that runs at chance and looks entirely
-    healthy doing it"). The gate proves RTL == golden model. It cannot prove the inputs were
-    the ones you meant, and no simulator can.
+    ⚠️ It cannot catch a missing scaling -- both sides are built from the same xq, so they agree
+    on whatever inputs are supplied. No simulator can prove the inputs were the ones you meant.
     """
     from dwn2rtl.verify import verify
 

@@ -1,23 +1,12 @@
 """Synthetic DWN checkpoints, for tests only.
 
-⚠️ THIS IS NOT PART OF THE TOOL AND MUST NOT BECOME PART OF IT. dwn2rtl translates a trained
-model; it does not generate one. This file lives in tests/, ships in no wheel, and is on no
-user's path.
+⚠️ Not part of the tool and must not become part of it: dwn2rtl translates a trained model, it
+does not generate one. Real checkpoints run 17 MB to 471 MB, so CI fixtures have to be
+synthesized rather than committed.
 
-WHY IT HAS TO EXIST. Roadmap P8: a learnable mapping stores a (features x z) x (width x n)
-float32 matrix, so a real checkpoint is 17 MB for MNIST 1x300 and 471 MB for 1x1000 z=25.
-Nothing over 100 MB goes in git, so CI fixtures have to be synthesized rather than committed.
-
-WHY IT IS ALSO A GOOD IDEA. In the study repo the equivalent script passed Gate 1 at MNIST's
-shape -- 784 features, 10 classes, two layers -- before any MNIST model had been trained, which
-caught emitter bugs weeks earlier than a real checkpoint could have. Shape coverage is cheap
-here and expensive everywhere else.
-
-The checkpoints produced are STRUCTURALLY real: the wiring, tables and thresholds obey every
-rule in docs/checkpoint-format.md, including the two completely different mapping
-representations and the `__dummy_mapping` decoy. They are not trained, so their accuracy is
-meaningless -- which is fine, because the gate compares RTL against the golden model, not
-against a dataset.
+They are STRUCTURALLY real -- wiring, tables and thresholds obey docs/checkpoint-format.md,
+including both mapping representations and the `__dummy_mapping` decoy. They are not trained, so
+their accuracy is meaningless, which is fine: the gate compares RTL against the golden model.
 """
 
 import numpy as np
@@ -35,22 +24,17 @@ def _thresholds(rng, n_features, z, lo=-1.0, hi=1.0):
 
 
 def _tables(rng, out_size, n):
-    """(out_size, 2**n) float32 in [-1, 1].
-
-    The [-1, 1] range is not decoration: upstream initialises uniform in [-1, 1] and clamps back
-    into it on every training forward pass (docs/checkpoint-format.md §1). Only the SIGN is used
-    at inference, via a strict `> 0`.
+    """(out_size, 2**n) float32 in [-1, 1] -- upstream's init range. Only the SIGN is used at
+    inference, via a strict `> 0`.
     """
     return rng.uniform(-1.0, 1.0, size=(out_size, 2 ** n)).astype(np.float32)
 
 
 def _learnable_weights(rng, input_size, out_size, n):
-    """A LearnableMapping `weights` matrix whose argmax(dim=0) is a chosen wiring.
+    """A LearnableMapping `weights` whose argmax(dim=0) is a chosen wiring.
 
-    docs/checkpoint-format.md §3a: weights is (input_size, out_size*n) and node j slot k reads
-    input bit argmax(dim=0)[j*n + k]. To make the fixture's wiring known and deterministic, the
-    chosen row is set STRICTLY above every other -- ties would resolve to the lowest index and
-    quietly give a different wiring than intended.
+    The chosen row is set STRICTLY above the others: a tie resolves to the lowest index and would
+    quietly give different wiring than intended.
     """
     wiring = rng.integers(0, input_size, size=(out_size, n))
     w = rng.uniform(0.0, 0.5, size=(input_size, out_size * n)).astype(np.float32)
@@ -64,20 +48,9 @@ def make_checkpoint(n_features=4, z=2, layers=(6, 4), n=2, num_classes=2, seed=7
                     first_layer='learnable', run_name='synthetic'):
     """A structurally valid checkpoint in the tool's normalized form.
 
-    Defaults are deliberately TINY -- 4 features, z=2, n=2 -- so simulation is instant. Two
-    details of that smallness are load-bearing rather than incidental:
-
-      n=2 gives 4-entry truth tables, which is where the study repo's np.packbits bug lived:
-      bitorder='big' pads a partial byte on the LOW side, so [1,1,1,0] emitted as 0x70 instead
-      of 0x07 and every entry sat at the wrong address. n>=3 is a whole number of bytes and
-      never showed it. Testing at n=6 only would miss it again.
-
-      The first layer is `learnable` and the rest are `fixed`, which is upstream's own recipe
-      (examples/mnist.py) and forces BOTH mapping representations through every test. They share
-      no code, and one of them has a decoy sitting next to it.
-
-    `layers` is the per-layer node count. The last must be divisible by num_classes or GroupSum
-    zero-pads silently (docs/checkpoint-format.md §4).
+    Tiny by default so simulation is instant. Two details are load-bearing: n=2 gives 4-entry
+    tables, where a packbits bug once misplaced every entry, and layer 0 is `learnable` with the
+    rest `fixed`, forcing both mapping representations through every test.
     """
     if layers[-1] % num_classes:
         raise ValueError(
@@ -162,12 +135,10 @@ def extract_layers(ck):
 
 
 def classes_hit(ck, n_vectors=256, seed=0):
-    """How many distinct classes this model predicts over random binarized input.
+    """How many distinct classes this model predicts over random input.
 
-    A fixture that always answers the same class is nearly worthless as a gate: the testbench
-    would pass against a design whose argmax, popcount and grouping were all wrong, because the
-    right answer is a constant. vectors.py flags the same condition on real builds and calls it
-    `degenerate`; this is the fixture-side check that stops one being built in the first place.
+    A fixture answering one class always is worthless as a gate -- the testbench would pass
+    against a design whose argmax, popcount and grouping were all wrong.
     """
     import numpy as _np
     from dwn2rtl.extract import forward
@@ -255,13 +226,9 @@ def make_live(shape='tiny', **overrides):
 def make(shape='tiny', min_classes=2, max_tries=64, **overrides):
     """make('n6'), or make('tiny', seed=3).
 
-    Searches seeds until the model discriminates at least `min_classes` classes. The search is
-    deterministic -- seeds are tried in order from the starting one -- so a given call always
-    returns the same checkpoint and the vectors derived from it are reproducible.
-
-    Why search rather than hand-pick a good seed per shape: a pinned seed silently stops being
-    good the moment any shape parameter changes, and it would fail as a collapsed fixture rather
-    than as an obviously wrong seed. Pass min_classes=1 to deliberately build a degenerate one.
+    Searches seeds deterministically until the model discriminates `min_classes` classes, so a
+    call always returns the same checkpoint. A pinned seed would stop being good the moment a
+    shape parameter changed. min_classes=1 builds a degenerate one on purpose.
     """
     if shape not in SHAPES:
         raise KeyError(f'unknown shape {shape!r}; have {sorted(SHAPES)}')

@@ -50,22 +50,11 @@ def test_an_explicit_path_that_is_not_executable_is_refused():
 
 
 def _fake_install(d, name='iverilog.exe', runner='vvp.exe', on_path=False):
-    """A directory that looks like an install: the two files, and nothing runnable in them.
+    """A directory that looks like an install: the two files, nothing runnable in them.
 
-    Deliberately not real executables. find_simulator() locates by os.path.exists, and
-    _iverilog_version() is documented to swallow OSError -- so a stub proves both: the search
-    finds it, and a file that cannot be run yields an empty version instead of a crash.
-
-    ⚠️ `on_path=True` makes the stub discoverable by shutil.which, WHICH IS NOT THE SAME THING
-    as merely existing, and the difference is per-platform:
-
-        POSIX     the exact name (no .exe) AND the execute bit
-        Windows   any PATHEXT suffix, permissions ignored
-
-    Without it a stub is found by the fallback and is invisible to PATH -- which is precisely
-    how test_path_wins_over_the_fallback passed on Windows and failed on Ubuntu in CI. The test
-    believed it had put a simulator on PATH; on Linux it had put nothing there, so the fallback
-    won by default and the assertion caught a difference that was never being tested.
+    ⚠️ `on_path=True` makes it discoverable by shutil.which, which is not the same as existing:
+    POSIX needs the exact name and the execute bit, Windows any PATHEXT suffix. Without it,
+    test_path_wins_over_the_fallback passed on Windows having put nothing on PATH at all.
     """
     if on_path:
         suffix = '.exe' if os.name == 'nt' else ''
@@ -136,12 +125,8 @@ def test_an_unrunnable_binary_yields_an_empty_version_rather_than_raising(
 
 
 def test_path_wins_over_the_fallback(tmp_path, monkeypatch):
-    """Order is load-bearing. Someone with a deliberate simulator on PATH and a stale install in
-    C:\\iverilog\\bin must get the one they chose.
-
-    `on_path=True` is what makes this test real rather than vacuous -- see _fake_install. Without
-    it, nothing is on PATH under POSIX rules and the fallback wins for the uninteresting reason
-    that it is the only candidate.
+    """Order is load-bearing: a deliberate simulator on PATH must beat a stale install. `on_path=True`
+    is what makes this real rather than vacuous -- see _fake_install.
     """
     on_path = _fake_install(tmp_path / 'chosen', on_path=True)
     fallback = _fake_install(tmp_path / 'stale')
@@ -160,11 +145,8 @@ def test_the_winget_destination_is_among_the_candidates():
 
 
 def test_not_found_error_lists_what_was_searched_and_how_to_install(monkeypatch, empty_path):
-    """A user with no simulator needs the next action, not a negative result.
-
-    This calls find_simulator() rather than constructing a SimulatorNotFound by hand, which is
-    what it did until phase 4 -- asserting on a string the test itself wrote proves the message
-    is well-formed and nothing at all about the search that produces it.
+    """A user with no simulator needs the next action. Calls find_simulator() rather than building
+    the error by hand -- asserting on a string the test wrote proves nothing about the search.
     """
     absent = str(empty_path / 'absent')
     monkeypatch.setattr('dwn2rtl.verify._CANDIDATE_DIRS', [absent])
@@ -272,11 +254,8 @@ def test_missing_vectors_are_reported_before_the_simulator_runs(built):
 
 
 def test_an_empty_report_is_not_a_pass():
-    """`all([])` is True.
-
-    Without the explicit emptiness check, a directory with no runnable levels would satisfy
-    `all(...)` vacuously and print a green RESULT having checked nothing -- the single most
-    dangerous thing this tool could do. Needs no simulator: it is a property of the report.
+    """`all([])` is True. Without the emptiness check, a directory with no runnable levels prints a
+    green RESULT having checked nothing -- the most dangerous thing this tool could do.
     """
     from dwn2rtl.verify import Simulator
 
@@ -292,13 +271,8 @@ def test_an_empty_report_is_not_a_pass():
 # ---------------------------------------------------------------------------------------
 
 def test_missing_simulator_skips_gate_tests_loudly(monkeypatch):
-    """conftest skips `sim`-marked tests when there is no simulator. That is necessary and it
-    is also the one hook that could hide the project's only correctness signal, so the two
-    halves are asserted: the tests are skipped, and the reason says the gate did not run.
-
-    Tested by patching rather than by hiding the binary: stripping PATH does not work, because
-    verify.py deliberately falls back to C:\\iverilog\\bin and finds it anyway -- which is the
-    phase 0 finding working as intended.
+    """The skip hook is necessary and is also the one place that could hide the only correctness
+    signal, so both halves are asserted: skipped, and the reason says the gate did not run.
     """
     import conftest
 

@@ -1,15 +1,11 @@
 """checkpoint.py -- the format, and the errors that stop a wrong one reaching the emitter.
 
-The tests split in two, and the second half matters more:
+Two halves, and the second matters more: the three accepted shapes normalize to the same thing,
+and every rejected shape produces an error that NAMES the problem.
 
-  1. the three accepted shapes all normalize to the SAME thing
-  2. every rejected shape produces an error that NAMES THE ACTUAL PROBLEM
-
-(2) is not politeness. The failure this module exists to prevent -- a bare state_dict, which
-drops the thermometer and therefore the entire encoder -- produces a design that synthesizes
-cleanly and classifies at chance. A user told "invalid checkpoint" re-saves it the same way. A
-user told the thermometer is a separate object fixes it in one line. So the error text is part
-of the contract and gets asserted like any other behaviour.
+⚠️ That is not politeness. A bare state_dict drops the encoder and yields a design that
+synthesizes cleanly and classifies at chance. "Invalid checkpoint" gets re-saved the same way;
+naming the thermometer gets it fixed in one line. So the error text is part of the contract.
 """
 
 import copy
@@ -106,13 +102,9 @@ def test_numpy_thresholds_are_accepted():
 # ---------------------------------------------------------------------------------------
 
 def test_a_scaler_is_preserved_not_dropped():
-    """Found by testing against a real study-repo checkpoint: JSC carries {'mean', 'scale'} and
-    the normalized form threw it away -- while the emitted encoder's header claimed "the
-    checkpoint carries the scaler for this reason".
-
-    It matters because thresholds live in whatever feature space training used. Drive x_flat
-    with raw features when the model saw scaled ones and the design runs at chance while looking
-    entirely healthy.
+    """Found against a real checkpoint: normalize() threw the scaler away while the emitted header
+    claimed it was carried. Thresholds live in whatever space training used, so raw features
+    give a design that runs at chance and looks healthy.
     """
     ck = fixtures.make('tiny')
     n_features = ck['thermometer']['thresholds'].shape[0]
@@ -162,11 +154,8 @@ def test_an_unrecognized_scaler_is_flagged_rather_than_ignored():
 # ---------------------------------------------------------------------------------------
 
 def test_bare_state_dict_is_refused_and_names_the_thermometer():
-    """The whole reason this module exists.
-
-    Upstream saves nothing, so `torch.save(model.state_dict())` is what a PyTorch user reaches
-    for -- and it drops the thermometer, and with it the encoder, which on the smallest studied
-    model is fourteen times the network it feeds.
+    """The whole reason this module exists: `torch.save(model.state_dict())` is what a PyTorch user
+    reaches for, and it drops the thermometer and with it the encoder.
     """
     model, _ = fixtures.make_live('tiny')
     with pytest.raises(CheckpointError) as e:
@@ -299,12 +288,8 @@ def test_one_dimensional_thresholds_are_refused():
 
 
 def test_the_upstream_pin_agrees_with_the_documentation():
-    """One pin, in two places that must not drift.
-
-    `docs/checkpoint-format.md` states which upstream commit its rules were verified against;
-    `checkpoint.py` carries the same SHA. If they disagree, one of them is lying about what was
-    actually read -- and the document's whole value is that its claims were checked against a
-    specific source rather than inferred.
+    """One pin in two places that must not drift. If the doc and checkpoint.py disagree, one is
+    lying about what was actually read.
     """
     import os
     from dwn2rtl.checkpoint import UPSTREAM_COMMIT, UPSTREAM_URL
@@ -318,11 +303,8 @@ def test_the_upstream_pin_agrees_with_the_documentation():
 
 
 def test_the_upstream_pin_is_not_enforced_at_load_time():
-    """Provenance, not a version gate.
-
-    Loading is duck-typed precisely so a user whose model was trained against a different
-    upstream commit is not refused. A rename upstream should surface as a clear failure with a
-    real message, never as "your checkpoint is the wrong version".
+    """Provenance, not a version gate. Loading is duck-typed so a model trained against another
+    commit is not refused; a rename should surface as a real message, not "wrong version".
     """
     ck = fixtures.make('tiny')
     ck['pinned_commit'] = 'something-else-entirely'
@@ -347,11 +329,8 @@ def test_checkpoint_api_is_reachable_from_the_package_root():
 
 
 def test_reaching_the_checkpoint_api_does_not_break_the_torch_boundary():
-    """`import dwn2rtl` must stay torch-free even though dwn2rtl.load exists.
-
-    checkpoint.py imports torch at module level, so a plain top-level import in __init__.py
-    would silently cost every invocation a torch import -- including `dwn2rtl verify`, which
-    never reads a checkpoint. PEP 562 __getattr__ is how both are true at once.
+    """`import dwn2rtl` stays torch-free even though dwn2rtl.load exists. PEP 562 __getattr__ is how
+    both are true at once.
     """
     import subprocess
     import sys

@@ -1,13 +1,10 @@
-"""The precision policy -- the one part of the tool that already worked in phase 0.
+"""The precision policy: integer width DERIVED from the thresholds, fractional width ASKED for.
 
-The rule under test (precision.py, roadmap Q9): integer width is DERIVED exactly from the
-thresholds, fractional width is ASKED FOR as `--input-bits`, and the two are never confused. The
-study repo paid for that distinction: a narrowing fitted and validated on the same 1,000 samples
-put 8 of 15 features too narrow.
+The two are never confused, and the distinction was paid for -- a narrowing fitted and validated
+on the same 1,000 samples put 8 of 15 features too narrow.
 
-The numbers below are not invented. Where a case reproduces a real model's known format it says
-so, because a policy that agrees with two independently-derived formats is evidence and a policy
-that agrees with none is a guess.
+Where a case reproduces a real model's known format it says so: a policy agreeing with two
+independently-derived formats is evidence, one agreeing with none is a guess.
 """
 
 import numpy as np
@@ -51,12 +48,8 @@ def test_required_int_bits_uses_the_largest_magnitude_either_way():
 # --------------------------------------------------------------------------------------
 
 def test_input_bits_gives_a_proved_format():
-    """8-bit pixels -> frac=8. Provably lossless, not merely measured.
-
-    Values are k/255 and quantising at frac=8 computes floor(k*256/255), which is strictly
-    increasing over k=0..255. Order is preserved exactly, and every encoder bit is an order
-    comparison, so no bit can change. The study repo's 0-of-10,000 divergence is what a proof
-    predicts, not a lucky measurement.
+    """8-bit pixels -> frac=8, provably lossless. Values are k/255 and quantising at frac=8 is
+    strictly increasing, so order is preserved and no order comparison can change.
     """
     thr = np.array([[0.1, 0.5, 0.9]])            # MNIST-shaped: everything under 1.0
     p = precision_for(thr, input_bits=8)
@@ -148,14 +141,9 @@ def test_continuous_data_infers_nothing():
 
 
 def test_small_magnitude_values_do_not_match_every_coarse_grid():
-    """The false positive that closeness alone lets through, and it is the dangerous one.
-
-    Values of ~0.001 scaled by the n=1 grid all round to 0, so the residual is tiny under any
-    absolute tolerance and a naive check infers n=1 -- a ONE-BIT fractional word, labelled
-    provably lossless. Found by test_a_scaled_integer_grid_is_recognised[16], whose k/65535
-    inputs are all under 0.001.
-
-    The fix is to require the grid to SEPARATE the thresholds, not merely to sit near them.
+    """The dangerous false positive: values of ~0.001 all round to 0 on a coarse grid, so a naive
+    tolerance infers n=1 -- a ONE-BIT word labelled provably lossless. The fix is requiring the
+    grid to SEPARATE the thresholds, not merely sit near them.
     """
     tiny = np.arange(64) / 65535          # every value < 0.001
     assert infer_input_bits(tiny) == 16, 'inferred a coarse grid for small-magnitude values'
@@ -229,11 +217,8 @@ def test_precision_is_frozen():
 # --------------------------------------------------------------------------------------
 
 def test_merge_floor_counts_collapsed_comparators_per_feature():
-    """Two thresholds that quantise to the same integer become the SAME comparison.
-
-    Not a bug -- the hardware is smaller and the encoder still separates everything the format
-    can separate -- but it is a silent accuracy change, so it is reported. At frac=2, feature 0's
-    0.10 and 0.11 both floor to 0 and merge; feature 1's 0.5 and 0.9 stay distinct.
+    """Thresholds quantising to the same integer become one comparison. Not a bug, but a silent
+    accuracy change, so it is reported. Merging is per feature, never across them.
     """
     thr = np.array([[0.10, 0.11], [0.5, 0.9]])
     distinct, total, collapsed = comparator_merge_floor(thr, Precision(word_bits=8, frac_bits=2))

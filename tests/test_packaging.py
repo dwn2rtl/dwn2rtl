@@ -1,14 +1,8 @@
-"""Phase 0's deliverable, asserted: the tree is an installable package with a working CLI.
+"""The tree is an installable package with a working CLI.
 
-These are not tests of the generator -- nothing here emits Verilog. They test the things that
-break silently between "it works on my machine" and "a user ran pip install":
-
-  - the package imports at all
-  - the console-script entry point resolves and runs
-  - the hand-written Verilog SHIPS INSIDE the package
-  - importing dwn2rtl does not drag torch in
-
-Each one has a specific failure it exists to catch, recorded at the test.
+Nothing here emits Verilog. These test what breaks silently between "works on my machine" and "a
+user ran pip install": the package imports, the console script resolves, the hand-written
+Verilog ships INSIDE the package, and importing dwn2rtl does not drag torch in.
 """
 
 import os
@@ -30,11 +24,8 @@ def test_package_imports_and_has_a_version():
 
 
 def test_version_matches_pyproject():
-    """The declared version and the importable one must agree.
-
-    They are written in two places -- pyproject.toml and __init__.py -- and nothing but this
-    test makes them stay equal. A wheel whose metadata says one version and whose code reports
-    another is the kind of thing nobody notices until a bug report cites an impossible version.
+    """The declared version and the importable one must agree -- two files, and nothing but this
+    keeps them equal.
     """
     # tomllib is stdlib only from 3.11, and the supported floor is 3.10. Skipping is right
     # here: this test guards two files agreeing with each other, and the answer does not vary
@@ -54,13 +45,9 @@ def test_version_matches_pyproject():
 # --------------------------------------------------------------------------------------
 
 def test_verilog_primitives_ship_with_the_package():
-    """The four hand-written modules must be INSIDE the package, not beside it in a repo.
-
-    Every emitted design instantiates lut_node, popcount, argmax and pipe_reg. If they are not
-    packaged, `pip install dwn2rtl` produces a tool whose output references four modules that do
-    not exist on the user's machine -- and an editable install cannot detect that, because it
-    resolves this path straight back to the source tree. Hence also the wheel check in the
-    ledger; this test guards the resource lookup itself.
+    """Every emitted design instantiates these four. Unpackaged, `pip install dwn2rtl` gives a tool
+    whose output references modules that do not exist -- and an editable install cannot detect
+    it, since the path resolves back to the source tree.
     """
     rtl = files('dwn2rtl') / 'rtl'
     for name in PRIMITIVES:
@@ -71,14 +58,9 @@ def test_verilog_primitives_ship_with_the_package():
 
 @pytest.mark.parametrize('name', PRIMITIVES + ['tb/dwn_core_tb.v', 'tb/dwn_top_tb.v'])
 def test_shipped_verilog_cites_nothing_a_user_cannot_open(name):
-    """The primitives are COPIED INTO every emitted directory, so their comments are
-    documentation the user reads -- and they were imported verbatim from the study repo.
-
-    They cited `docs/reference/checkpoint-format.md`, `docs/jsc/dse-plan.md` and
-    `probe-results.md`, none of which exist in this repository, and referred to "Phase 1" and
-    "CLAUDE.md" meaning the STUDY repo's phases and rules. A reference that resolves nowhere is
-    worse than none: it tells the reader there is an authority to consult and then wastes their
-    time looking for it.
+    """The primitives are copied into every emitted directory, so their comments are
+    documentation a user reads -- and they once cited study-repo paths that do not exist here.
+    A reference resolving nowhere is worse than none.
     """
     text = (files('dwn2rtl') / 'rtl' / name).read_text(encoding='utf-8')
     # CLAUDE.md is in .gitignore, so it is not in the repository at all -- a reader who follows
@@ -102,11 +84,7 @@ def test_testbenches_ship_with_the_package():
 
 
 def test_both_testbenches_have_content():
-    """Neither testbench may be empty.
-
-    `dwn_top_tb.v` was a 0-byte file from commit 646aebe until phase 1 -- half the gate did not
-    exist. It was held by a strict xfail, which did its job: writing the testbench turned the
-    XPASS into a failure and forced the marker's deletion rather than leaving a stale TODO.
+    """Neither may be empty. dwn_top_tb.v was 0 bytes until phase 1 -- half the gate did not exist.
     """
     tb = files('dwn2rtl') / 'rtl' / 'tb'
     for name in ('dwn_core_tb.v', 'dwn_top_tb.v'):
@@ -173,13 +151,8 @@ def test_build_rejects_missing_out():
 def test_importing_dwn2rtl_does_not_import_torch():
     """A documented invariant (see __init__.py), so it gets a test rather than a comment.
 
-    Runs in a SUBPROCESS deliberately: by the time this test executes, some other test may
-    already have imported torch into this interpreter, and the check would pass for the wrong
-    reason. A clean interpreter is the only honest way to ask.
-
-    Why it matters: torch is seconds of startup and hundreds of megabytes, every emitter and the
-    golden model are pure numpy, and `dwn2rtl verify` on an already-emitted directory has no
-    checkpoint to read at all.
+    ⚠️ Runs in a SUBPROCESS: another test may already have imported torch into this interpreter,
+    and the check would then pass for the wrong reason.
     """
     code = 'import sys, dwn2rtl; print("torch" in sys.modules)'
     out = subprocess.run([sys.executable, '-c', code],

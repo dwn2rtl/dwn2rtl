@@ -1,16 +1,8 @@
 """Shared test setup.
 
-Two jobs, both of which were previously happening by accident or by repetition.
-
-1. MAKE `import fixtures` DELIBERATE. It worked because pytest inserts a test file's directory
-   into sys.path when that directory has no __init__.py -- a real rule, but an implicit one that
-   depends on a layout nobody wrote down. Anyone who added an __init__.py to tests/, or ran the
-   suite through a different runner, would have got ImportError with no obvious cause. Now it is
-   one line that says what it is doing.
-
-2. SKIP THE GATE IN ONE PLACE. `@pytest.mark.sim` tests need a simulator, and three test files
-   had each grown their own copy of "is there one?". Centralised here, so a test only has to
-   declare that it needs a simulator and not how to look for one.
+Two jobs that were previously happening by accident or by repetition: making `import fixtures`
+deliberate rather than relying on pytest's sys.path insertion, and skipping tool-dependent tests
+in ONE place instead of three copies of "is there one?".
 """
 
 import os
@@ -46,12 +38,8 @@ YOSYS = _find_yosys()
 
 
 def _find_verilator():
-    """Verilator, for lint only -- NOT a second gate.
-
-    It catches a class the gate structurally cannot: the gate proves the RTL matches the golden
-    model, and says nothing about whether the file is well-formed for a tool it does not run.
-    Measured, not assumed -- a comment line beginning with the word "verilator" is read as a
-    pragma, which made `--lint-only` an ERROR while iverilog still printed PASS.
+    """Verilator, for lint only -- NOT a second gate. It catches what the gate cannot: whether the
+    files are well-formed for a tool the gate never runs.
     """
     import shutil
     import subprocess
@@ -77,12 +65,10 @@ def simulator():
 
 
 def pytest_collection_modifyitems(config, items):
-    """Skip `sim`-marked tests when there is no simulator, everywhere, once.
+    """Skip tool-marked tests in one place.
 
-    ⚠️ SKIPPING IS NOT PASSING, and this hook is the one place that could quietly hide the
-    project's only correctness signal. It prints a report line saying so, because a run with the
-    gate silently absent looks exactly like a run with the gate green -- and CI must be
-    configured to have a simulator, not to tolerate its absence.
+    ⚠️ Skipping is not passing, and this hook could quietly hide the project's only correctness
+    signal -- hence the report line saying so.
     """
     if SIMULATOR is None:
         skip = pytest.mark.skip(reason='no Verilog simulator -- THE GATE DID NOT RUN')

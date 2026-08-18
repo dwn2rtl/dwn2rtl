@@ -66,13 +66,9 @@ def _readme_link_targets():
 
 
 def test_readme_has_no_relative_links():
-    """⚠️ PyPI renders the README as the PROJECT PAGE, where a relative link resolves against
-    pypi.org and 404s.
-
-    The five that were here -- four docs and LICENSE -- worked perfectly on GitHub and would
-    have been dead on the page every new user sees. Nothing about the file looks wrong; the
-    same text is correct in one renderer and broken in the other, which is why this is a test
-    rather than a habit.
+    """⚠️ PyPI renders the README as the project page, where a relative link resolves against
+    pypi.org and 404s. The five here worked perfectly on GitHub -- the same text is correct in
+    one renderer and broken in the other, which is why it is a test.
     """
     _, targets = _readme_link_targets()
     relative = [t for t in targets if not t.startswith(('http://', 'https://', 'mailto:'))]
@@ -82,12 +78,8 @@ def test_readme_has_no_relative_links():
 
 
 def test_readme_links_into_this_repo_resolve():
-    """Absolute links still have to point at something.
-
-    Making the links absolute fixes PyPI and removes the old safety net: a URL cannot be
-    checked by looking at the filesystem. So the ones aimed back into this repo are mapped to
-    their paths and checked against git, which is what the previous version of this test did --
-    it caught a link to CLAUDE.md, which is gitignored and 404s for everyone else.
+    """Absolute links still have to point at something, and a URL cannot be checked against the
+    filesystem. The ones aimed back here are mapped to paths and checked against git.
     """
     root, targets = _readme_link_targets()
     inward = [t for t in targets if t.startswith(REPO_BLOB)]
@@ -103,14 +95,8 @@ def test_readme_links_into_this_repo_resolve():
 
 
 def test_readme_tells_people_how_to_install_it():
-    """Replaces test_readme_does_not_promise_a_pypi_package_that_does_not_exist, which asserted
-    the OPPOSITE and was correct until 0.1.0 went to PyPI. Its docstring said to delete it at
-    exactly that moment, so it was.
-
-    ⚠️ The README is baked into the uploaded artifact, so PyPI renders whatever this file said
-    when the wheel was BUILT -- an install line is frozen on the project page for that version.
-    That is why the instruction has to be right before the build rather than after the upload,
-    and why it is worth a test rather than a memory.
+    """⚠️ The README is baked into the uploaded artifact, so PyPI renders whatever it said when the
+    wheel was BUILT. The install line has to be right before the build, not after the upload.
     """
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     readme = open(os.path.join(root, 'README.md'), encoding='utf-8').read()
