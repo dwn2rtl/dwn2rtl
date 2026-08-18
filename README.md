@@ -5,16 +5,38 @@
 [![CI](https://github.com/dwn2rtl/dwn2rtl/actions/workflows/ci.yml/badge.svg)](https://github.com/dwn2rtl/dwn2rtl/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/licence-MIT-blue.svg)](https://github.com/dwn2rtl/dwn2rtl/blob/main/LICENSE)
 
-**A trained Differentiable Weightless Neural Network goes in. Synthesizable Verilog comes out —
-with the testbenches to prove, in your own simulator, that it computes the same function.**
+**Turn a trained Differentiable Weightless Neural Network into synthesizable Verilog for FPGAs —
+and prove, in your own simulator, that the Verilog computes exactly what your model does.**
+
+A DWN is a neural network whose learned parameters *are* lookup tables: one neuron becomes one
+LUT6, so the network is logic rather than arithmetic. That makes it unusually well suited to an
+FPGA, and `dwn2rtl` is the generator that gets it there — plus the testbenches that prove the
+translation was faithful.
+
+## Installation
 
 ```bash
 pip install dwn2rtl
 ```
 
+Python 3.10+, on Linux, macOS and Windows. Pulls in numpy and torch.
+
+## Requirements
+
+| command | needs |
+|---|---|
+| `dwn2rtl build` | nothing but Python |
+| `dwn2rtl verify` | any Verilog simulator — `winget install Icarus.Verilog` (Windows), `apt install iverilog` (Debian/Ubuntu), `brew install icarus-verilog` (macOS) |
+| `dwn2rtl estimate` | [yosys](https://github.com/YosysHQ/yosys), and it is optional |
+
+No vendor toolchain appears in that list. Nothing here needs Vivado, Quartus or a licence —
+including the verification, which is the part most tools ask you to take on trust.
+
+## Quickstart
+
 ```bash
-dwn2rtl build model.pt --out rtl/
-dwn2rtl verify rtl/
+dwn2rtl build model.pt --out rtl/     # checkpoint -> Verilog + golden vectors
+dwn2rtl verify rtl/                   # compile and run it; must print PASS
 ```
 
 ```
@@ -36,90 +58,78 @@ iverilog 12.0
 RESULT   PASS
 ```
 
-That is a real MNIST model, not an illustration. No flags, no config file, no vendor toolchain.
+That is a real MNIST model, not an illustration — no flags, no config file, no vendor toolchain.
+Before it was packaged as a tool, this generator built **77 configurations across two datasets,
+every one bit-exact** against its software model, two of them verified on physical silicon.
 
----
-
-## Try it in ten seconds
-
-[`examples/quickstart.py`](https://github.com/dwn2rtl/dwn2rtl/blob/main/examples/quickstart.py) is
-one file with no dataset and no training: it builds a DWN, saves it, emits Verilog, and runs that
-Verilog through a simulator. It is written to be read, and it shows exactly where your training
-script plugs in. **It is not part of the installed package** — download it, or clone the repo:
+**No model yet?**
+[`examples/quickstart.py`](https://github.com/dwn2rtl/dwn2rtl/blob/main/examples/quickstart.py)
+needs no dataset and no training: it builds a DWN, saves it, emits Verilog, and simulates it. It
+is written to be read, and it shows where your own training script plugs in. It ships in the
+repository rather than the package:
 
 ```bash
 curl -O https://raw.githubusercontent.com/dwn2rtl/dwn2rtl/main/examples/quickstart.py
 python quickstart.py
 ```
 
-> `build` needs nothing but Python. **`verify` needs a Verilog simulator**, which you install
-> yourself: `winget install Icarus.Verilog` (Windows), `apt install iverilog` (Debian/Ubuntu), or
-> `brew install icarus-verilog` (macOS).
+## From Python
 
-## Saving your model
+The CLI and the library are the same installed code, so anything `build` does you can do inline —
+useful while the model is still in memory:
+
+```python
+import dwn2rtl
+
+dwn2rtl.save(model, thermometer, 'model.pt', scaler=scaler)   # validates while you can still fix it
+report = dwn2rtl.build('model.pt', 'rtl/')
+result = dwn2rtl.verify('rtl/')
+```
+
+`import dwn2rtl` does not import torch — every emitter and the golden model are pure numpy.
+
+## Using it on your own model
 
 **A DWN is two objects.** The thermometer is fitted *before* training and is not a model
 parameter, so one line at the end of your training script:
 
 ```python
-torch.save({'model': model, 'thermometer': thermometer}, 'model.pt')
+torch.save({'model': model, 'thermometer': thermometer, 'scaler': scaler}, 'model.pt')
 ```
-
-Add `'scaler': scaler` if your training scaled its features — the thresholds live in whatever
-feature space training used.
 
 > ⚠️ **`torch.save(model.state_dict())` silently loses the encoder.** It is what every PyTorch
-> user reaches for, and it drops the thermometer entirely — which on the smallest studied model is
-> most of the design. dwn2rtl refuses such a file by name rather than emitting something that
-> synthesizes cleanly and classifies at chance.
+> user reaches for, and it drops the thermometer entirely — which on the smallest model we have
+> measured is most of the design. dwn2rtl refuses such a file by name rather than emitting
+> something that synthesizes cleanly and classifies at chance.
 
-## Precision: usually you type nothing
+**You almost never specify precision.** Everything structural is derived from the checkpoint, and
+rather than asking how much precision you *need* — unanswerable without your data — the tool works
+out how much your input already *has*, then reports whether it inferred, was told, or fell back to
+a default. `--input-bits N` overrides it.
 
-Everything structural is derived from the checkpoint, including the **integer** width. The one
-number that cannot be derived in general is how many **fractional** bits to use, because whether
-quantisation changes a prediction depends on your data. So the tool never asks how much precision
-you *need* — it works out how much your input already *has*, and always says which happened:
+The [user guide](https://github.com/dwn2rtl/dwn2rtl/blob/main/docs/user-guide.md) covers all of
+this properly: every checkpoint shape accepted, the three precision cases, and what to do when
+there is no grid to find.
 
-```
-frac bits 8 -> Q0.8 signed (9-bit)      INFERRED from the thresholds' grid, provably lossless
-frac bits 8 -> Q0.8 signed (9-bit)      from --input-bits, provably lossless
-frac bits 12 -> Q3.12 signed (16-bit)   DEFAULT for a continuous input, NOT measured
-```
-
-Thermometer thresholds are quantiles of the training data, so quantised data leaves a grid to
-find. On MNIST the tool finds `k/255` and derives a 9-bit word with nothing typed. Pass
-`--input-bits N` to state or override it.
-
-## What `build` emits
+## What you get
 
 A self-contained directory. Hand it to any simulator or synthesis tool — dwn2rtl is not needed
-again.
+again. Every file is a sibling; the indentation below shows what instantiates what.
 
 ```
 rtl/
-├── dwn_top.v                 <- INSTANTIATE THIS. encoder + core, one class per clock
-│   ├── thermometer_encoder.v    features -> thermometer bits. always ships; often the larger half
-│   └── dwn_core.v               the network itself: one node = one LUT6
-│
-├── lut_node.v                hand-written primitives, copied in so the directory stands alone
-├── popcount.v
-├── argmax.v
-├── pipe_reg.v
-│
-├── dwn_top_params.vh         `DWN_TOP_LATENCY -- cycles from x_flat to class_idx
-├── dwn_core_params.vh        widths and pipeline depth
-│
-├── input_scaling.json        ⚠️ only if trained on scaled features -- see below
-│
-├── x_quant.hex               golden vectors: quantized features in...
-├── expected_top.hex          ...and the class the software model gives for each
-├── x_binarized.hex           the same, one level down: pre-encoded bits
-├── expected.hex
-├── top_params.vh             vector counts, so the testbenches size themselves
-├── vec_params.vh
-└── tb/
-    ├── dwn_top_tb.v          self-checking; what `dwn2rtl verify` runs
-    └── dwn_core_tb.v
+  dwn_top.v              <- INSTANTIATE THIS; encoder + core, one classification per clock
+      thermometer_encoder.v   features -> thermometer bits. Always ships, often the larger half
+      dwn_core.v              the network itself: one node = one LUT6
+
+  lut_node.v  popcount.v  argmax.v  pipe_reg.v  primitives, copied in so the directory stands alone
+  dwn_top_params.vh  dwn_core_params.vh         latency, widths, pipeline depth
+
+  input_scaling.json    emitted only if the model was trained on scaled features -- see below
+  x_quant.hex  expected_top.hex    golden vectors: quantized features in, expected class out
+  x_binarized.hex  expected.hex    the same one level down, on pre-encoded bits
+  top_params.vh  vec_params.vh     vector counts, so the testbenches size themselves
+  tb/                              self-checking testbenches; what `dwn2rtl verify` runs
 ```
 
 **For synthesis** you need the three design files, the four primitives, and the two `.vh`
@@ -129,35 +139,26 @@ parameter files. The `.hex` files and `tb/` are for verification only.
 dwn_top u_dwn (.clk(clk), .x_flat(features), .class_idx(prediction));
 ```
 
-`x_flat` packs feature `f` at `[f*W +: W]` as a **signed** fixed-point integer. Throughput is one
-classification per clock (II=1) at the fixed latency in `dwn_top_params.vh` — no handshake, no
-backpressure. The board, clock, I/O and synthesis strategy are yours.
+One classification per clock (II=1), at the fixed latency in `dwn_top_params.vh` — no handshake,
+no backpressure. The board, clock, I/O and synthesis strategy are yours.
 
 > ⚠️ **If `input_scaling.json` is emitted, whatever drives `x_flat` must apply
 > `(x - mean) / scale` first.** Raw features give a design that runs at chance and looks entirely
-> healthy doing it — it will still pass `verify`, because the testbench feeds it correctly-scaled
-> vectors. See [the user guide](https://github.com/dwn2rtl/dwn2rtl/blob/main/docs/user-guide.md).
+> healthy doing it — and it will still pass `verify`, because the testbench feeds it
+> correctly-scaled vectors. This is the likeliest way to build a working-looking, useless design.
 
-**The encoder always ships, and its cost is always reported separately from the network's.** It is
-intrinsic to a DWN, not preprocessing you supply, and on the smallest model we have measured it
-was **fourteen times** the network it feeds. Published DWN resource counts that omit it understate
-designs by most of their cost.
+How to pack `x_flat`, how wide `class_idx` is, and the rest of the integration contract are in the
+[user guide](https://github.com/dwn2rtl/dwn2rtl/blob/main/docs/user-guide.md).
 
-## Verification is the whole point
+## Verifying and sizing
 
-Two testbenches, so a failure localizes itself: `dwn_core_tb` drives pre-binarized bits,
-`dwn_top_tb` drives quantized features through the encoder as well. Core passing while top fails
-means the encoder, and nothing else needs re-examining.
+**Emitted RTL is not correct until a simulator says it matches the golden model on every vector.**
+`build` writes two testbenches so a failure localizes itself — core passing while top fails means
+the encoder, and nothing else. Nothing unchecked is ever reported as a pass: a missing testbench,
+a compile error or a simulation that did not finish is a failure, not a skip.
 
-**And nothing that was not checked is reported as a pass.** A missing testbench, an empty one, a
-compile error, or a simulation that did not finish is a failure, not a skip.
-
-## Will it fit?
-
-`dwn2rtl estimate rtl/` synthesizes the emitted design with
-[yosys](https://github.com/YosysHQ/yosys) and reports LUTs and flops **per module**, so the
-encoder's cost never disappears into a total. It is the one optional command — `build` and
-`verify` need no synthesis tool, and `estimate` skips cleanly when yosys is absent.
+`dwn2rtl estimate rtl/` synthesizes with yosys and reports **per module**, so the encoder's cost
+never disappears into a total:
 
 ```
   thermometer_encoder       717 LUT        0 FF
@@ -165,32 +166,74 @@ encoder's cost never disappears into a total. It is the one optional command —
   dwn_top                   833 LUT        0 FF
 ```
 
-Generic mapping is not your vendor toolchain, and the report says so every time it prints: against
-Vivado on an `xc7a35t` the core agreed exactly and the encoder came out 2.1× low. Treat core
-numbers as indicative, encoder numbers as a floor, and synthesize for figures you publish —
-[the calibration is in the user
-guide](https://github.com/dwn2rtl/dwn2rtl/blob/main/docs/user-guide.md).
+Generic mapping is not your vendor toolchain, and the report says so every time it prints:
+calibrated against Vivado, the core agreed exactly while the encoder came out 2.1× low. Treat core
+numbers as indicative, encoder numbers as a floor, and synthesize for figures you publish — the
+calibration table is in the
+[user guide](https://github.com/dwn2rtl/dwn2rtl/blob/main/docs/user-guide.md).
 
-## Evidence
-
-Before it was packaged as a tool, this generator was used to run a full FPGA study. It built:
-
-- **77 configurations** across two datasets, **every one bit-exact** against its software model
-- **166,000 / 166,000** and **10,000 / 10,000** correct **on physical silicon**, one model per
-  dataset
-- the original authors' published area and accuracy, reproduced at matched convention
-
-Every number that study recorded — both datasets' fixed-point formats, comparator counts, and
-quantisation-merge counts — is reproduced exactly by the code in this repository and pinned by its
-test suite, so the claim is checkable here rather than taken on trust.
+**The encoder always ships, and its cost is always reported separately.** It is intrinsic to a
+DWN, not preprocessing you supply, and on the smallest model we have measured it was **fourteen
+times** the network it feeds. Published DWN resource counts that omit it understate designs by
+most of their cost.
 
 ## Documentation
 
 | | |
 |---|---|
-| [`docs/user-guide.md`](https://github.com/dwn2rtl/dwn2rtl/blob/main/docs/user-guide.md) | **start here** — using it on your own model: saving, integrating the RTL, troubleshooting |
+| [`docs/user-guide.md`](https://github.com/dwn2rtl/dwn2rtl/blob/main/docs/user-guide.md) | **start here** — using it on your own model: saving, precision, integrating the RTL, troubleshooting |
 | [`docs/checkpoint-format.md`](https://github.com/dwn2rtl/dwn2rtl/blob/main/docs/checkpoint-format.md) | what the exporter reads, and why |
 | [`docs/overview.md`](https://github.com/dwn2rtl/dwn2rtl/blob/main/docs/overview.md) | what the tool is, how it installs, the build plan |
+
+## Evidence
+
+Before it was packaged as a tool, this generator ran a full FPGA study:
+
+- **77 configurations** across two datasets, **every one bit-exact** against its software model
+- **166,000 / 166,000** and **10,000 / 10,000** correct **on physical silicon**, one per dataset
+- the original authors' published area and accuracy, reproduced at matched convention
+
+Every number that study recorded — both fixed-point formats, comparator counts, quantisation-merge
+counts — is reproduced by the code here and pinned by its test suite, so the claim is checkable
+from this repository rather than taken on trust.
+
+## Citation
+
+If `dwn2rtl` is useful in published work, please cite the tool and the paper it targets.
+
+**The tool:**
+
+```bibtex
+@software{dwn2rtl,
+  title  = {dwn2rtl: synthesizable Verilog from Differentiable Weightless Neural Networks},
+  author = {Sama, Krithik and Sama, Kanishk},
+  year   = {2026},
+  url    = {https://github.com/dwn2rtl/dwn2rtl}
+}
+```
+
+**The DWN paper**, whose [reference implementation](https://github.com/alanbacellar/DWN) this tool
+reads checkpoints from:
+
+```bibtex
+@InProceedings{pmlr-v235-bacellar24a,
+  title     = {Differentiable Weightless Neural Networks},
+  author    = {Bacellar, Alan Tendler Leibel and Susskind, Zachary and
+               Breternitz Jr, Mauricio and John, Eugene and John, Lizy Kurian and
+               Lima, Priscila Machado Vieira and Fran{\c{c}}a, Felipe M.G.},
+  booktitle = {Proceedings of the 41st International Conference on Machine Learning},
+  pages     = {2277--2295},
+  year      = {2024},
+  volume    = {235},
+  series    = {Proceedings of Machine Learning Research},
+  publisher = {PMLR}
+}
+```
+
+**The measurements** cited under Evidence — the 77 configurations, the silicon runs and the Vivado
+figures — were produced in
+[dwn-fpga-study](https://github.com/Kanishk234/dwn-fpga-study), which is where to look for how
+they were obtained.
 
 ## Development
 
@@ -200,10 +243,9 @@ pytest                  # everything
 pytest -m sim           # the gate: emitted RTL through a simulator
 ```
 
-**The gate is the rule**: emitted RTL is not correct until a simulator says it matches the golden
-model on *every* vector. Not "looks right", and not "the emitter's own read-back passed" — we
+**The gate is the rule**, and it is not "looks right" or "the emitter's own read-back passed" — we
 have a recorded case where a read-back reported 20/20 correct while the design was wrong on 958 of
-1,504 vectors. It runs in CI on Linux and Windows on every commit.
+1,504 vectors. It runs in CI on Linux and Windows, under two independent simulators, every commit.
 
 `docs/phaseN-ledger.md` and `phaseN-report.md` record how the tool was built, including the wrong
 turns; [`docs/tool-roadmap.md`](https://github.com/dwn2rtl/dwn2rtl/blob/main/docs/tool-roadmap.md)
@@ -212,5 +254,3 @@ is the archived work list that shaped it. Both are history, not instructions.
 ## Licence
 
 MIT — see [LICENSE](https://github.com/dwn2rtl/dwn2rtl/blob/main/LICENSE).
-
-Targets [Alan Bacellar's DWN implementation](https://github.com/alanbacellar/DWN).
