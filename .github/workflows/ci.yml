@@ -127,26 +127,46 @@ jobs:
         shell: pwsh
         timeout-minutes: 15
         run: |
+          # ⚠️ Exit codes are managed by hand here. GitHub runs pwsh with
+          # $ErrorActionPreference='stop', and PowerShell 7.3+ can turn a native command's
+          # non-zero exit into a TERMINATING error -- which would fail this step on
+          # `iverilog -V`, a command that exits 255 when it is working perfectly (verify.py:74).
+          $ErrorActionPreference = 'Continue'
+          $PSNativeCommandUseErrorActionPreference = $false
+
           for ($i = 1; $i -le 3; $i++) {
             choco install iverilog --no-progress -y
             if ($LASTEXITCODE -eq 0) { break }
             Write-Host "choco attempt $i exited $LASTEXITCODE; retrying"
             Start-Sleep -Seconds 20
           }
-          $dirs = @('C:\iverilog\bin',
-                    'C:\Program Files\iverilog\bin',
-                    'C:\Program Files (x86)\iverilog\bin')
-          $found = @($dirs | Where-Object { Test-Path (Join-Path $_ 'iverilog.exe') })
-          if ($found.Count -eq 0) {
-            Write-Host 'FATAL: choco reported success but there is no iverilog.exe. Looked in:'
-            $dirs | ForEach-Object { Write-Host "  $_" }
+          # ⚠️ ~~Test-Path against C:\iverilog\bin and the two Program Files variants~~ --
+          # WITHDRAWN, and it failed a WORKING install. Chocolatey uses neither: it unpacks to
+          # C:\ProgramData\chocolatey\lib\iverilog\tools and writes SHIMS into
+          # C:\ProgramData\chocolatey\bin, which is already on PATH. That is why Windows CI was
+          # green for dozens of commits before this check existed.
+          #
+          # So ask the question verify.py asks, in its order -- PATH first, then the installer
+          # directories -- rather than maintaining a second, wronger copy of the search.
+          $exe = (Get-Command iverilog -ErrorAction SilentlyContinue).Source
+          if (-not $exe) {
+            $dirs = @('C:\iverilog\bin',
+                      'C:\Program Files\iverilog\bin',
+                      'C:\Program Files (x86)\iverilog\bin')
+            $exe = $dirs | ForEach-Object { Join-Path $_ 'iverilog.exe' } |
+                   Where-Object { Test-Path $_ } | Select-Object -First 1
+          }
+          if (-not $exe) {
+            Write-Host 'FATAL: choco reported success but no iverilog is reachable.'
             Write-Host '--- what chocolatey thinks it installed ---'
             try { choco list } catch { Write-Host "(choco list failed: $_)" }
-            Write-Host '--- C:\ ---'
-            Get-ChildItem 'C:\' -Name
+            Write-Host '--- PATH ---'
+            $env:PATH -split ';' | ForEach-Object { Write-Host "  $_" }
             exit 1
           }
-          Write-Host "iverilog found at $($found[0]) -- left off PATH on purpose"
+          $version = (& $exe -V 2>&1 | Select-Object -First 1)
+          Write-Host "iverilog at $exe -- $version"
+          exit 0    # never inherit -V's 255
 
       - name: Install the package
         run: pip install -e ".[dev]"
