@@ -98,7 +98,7 @@ jobs:
             -o Acquire::http::Timeout=15 -o Acquire::https::Timeout=15
           sudo apt-get install -y -o DPkg::Lock::Timeout=600 \
             -o Acquire::http::Timeout=15 -o Acquire::https::Timeout=15 \
-            iverilog yosys
+            iverilog yosys verilator
           iverilog -V | head -1
           yosys -V
 
@@ -205,6 +205,19 @@ jobs:
               sys.exit(1)
           print('yosys:', y.describe())
           PY
+
+      # Same reasoning again: on a runner where verilator was just installed, a skipped lint
+      # test means the install achieved nothing and the check silently did not run.
+      #
+      # ⚠️ LINT IS NOT A SECOND GATE. It answers a different question -- whether the emitted
+      # files are well-formed for a tool the gate does not run -- and that gap is not
+      # hypothetical: a comment beginning with the word "verilator" is read as a pragma, which
+      # made --lint-only an ERROR while iverilog printed PASS on the same files.
+      - name: The lint tests can actually run (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          verilator --version || { echo 'FATAL: verilator installed but not usable'; exit 1; }
 
       - name: Tests
         run: pytest -v

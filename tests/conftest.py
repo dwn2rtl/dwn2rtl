@@ -45,6 +45,29 @@ def _find_yosys():
 YOSYS = _find_yosys()
 
 
+def _find_verilator():
+    """Verilator, for lint only -- NOT a second gate.
+
+    It catches a class the gate structurally cannot: the gate proves the RTL matches the golden
+    model, and says nothing about whether the file is well-formed for a tool it does not run.
+    Measured, not assumed -- a comment line beginning with the word "verilator" is read as a
+    pragma, which made `--lint-only` an ERROR while iverilog still printed PASS.
+    """
+    import shutil
+    import subprocess
+    exe = shutil.which('verilator')
+    if not exe:
+        return None
+    try:
+        out = subprocess.run([exe, '--version'], capture_output=True, text=True, timeout=60)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return (out.stdout or out.stderr).strip().splitlines()[0] if out.returncode == 0 else None
+
+
+VERILATOR = _find_verilator()
+
+
 @pytest.fixture(scope='session')
 def simulator():
     """The simulator, for tests that drive it directly rather than through verify()."""
@@ -72,6 +95,12 @@ def pytest_collection_modifyitems(config, items):
         skip = pytest.mark.skip(reason='no yosys -- estimate is optional')
         for item in items:
             if 'yosys' in item.keywords:
+                item.add_marker(skip)
+    if VERILATOR is None:
+        # Optional like yosys: linting is a second opinion, not the correctness signal.
+        skip = pytest.mark.skip(reason='no verilator -- lint is a second opinion, not the gate')
+        for item in items:
+            if 'lint' in item.keywords:
                 item.add_marker(skip)
 
 
