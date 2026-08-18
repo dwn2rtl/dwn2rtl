@@ -1,10 +1,9 @@
-// Popcount for one class group -- GroupSum from the software model
-// (dwn2rtl docs/checkpoint-format.md §4): the final layer's outputs are split into
-// `num_classes` contiguous, in-order slices, and each slice is summed.
+// Popcount for one class group. This is GroupSum from the software model: the last layer's
+// outputs are cut into `num_classes` contiguous slices and each slice is summed
+// (dwn2rtl docs/checkpoint-format.md §4).
 //
-// The software divides each sum by `tau`, but tau is one uniform constant applied to every
-// class, so it cannot change which class wins. The hardware never needs it -- popcount and
-// compare is the whole output stage.
+// The software then divides by `tau`, but tau is the same constant for every class, so it can't
+// change which one wins. The hardware skips it -- popcount and compare is the whole output stage.
 
 `timescale 1ns / 1ps
 `default_nettype none
@@ -16,22 +15,11 @@ module popcount #(
     output reg  [$clog2(WIDTH+1)-1:0]    count
 );
 
-    // WRITTEN AS A LOOP, AND THAT IS SAFE HERE -- measured, not assumed. A loop describes a
-    // chain of WIDTH-1 dependent adds; addition is associative, so a tool MAY rebalance it, but
-    // "may" is not "does". (For argmax it genuinely was a defect: selection is not associative,
-    // so no tool can, and the chain cost 20 MHz.)
-    //
-    // Logic levels after mapping, with a non-associative mux chain of the same width as a
-    // control (docs/phase4-ledger.md):
-    //
-    //     width      popcount      mux chain (control)      a linear chain would be
-    //        10             3                        3                            9
-    //        30             6                       11                           29
-    //       100             8                       39                           99
-    //       600            12                        -                          599
-    //
-    // popcount tracks log2(WIDTH); the control does not, which proves the metric can see a deep
-    // path when one exists. An explicit adder tree would cost recursion for no measured gain.
+    // A loop, which reads like a chain of WIDTH-1 dependent adds -- but addition is associative,
+    // so synthesis rebalances it into a tree. Worth checking rather than trusting: measured depth
+    // tracks log2(WIDTH) (3 at width 10, 6 at 30, 8 at 100, 12 at 600), while a mux chain of the
+    // same width -- not associative, so nothing can rebalance it -- hits 39 at width 100. Writing
+    // the tree out by hand would add recursion for nothing. (docs/phase4-ledger.md)
     integer i;
 
     always @* begin

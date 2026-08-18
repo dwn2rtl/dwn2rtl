@@ -1,18 +1,16 @@
-// One DWN node = one lookup table = exactly one Xilinx LUT6. The core is this module repeated;
-// wiring is fixed after training, so there is no arithmetic in it.
+// One DWN node is one lookup table, which is one LUT6. The core is just this module repeated --
+// the wiring is fixed after training, so there's no arithmetic anywhere in it.
 //
-// ⚠️ ADDRESS BIT ORDER IS LOAD-BEARING. The address is built as
-//     addr |= (input[mapping[j][l]] > 0) << l
-// so mapping slot l is address bit l, slot 0 the LSB. Concatenate to match:
+// ⚠️ Bit order matters. The address is built as `addr |= (input[mapping[j][l]] > 0) << l`, so
+// mapping slot l is address bit l and slot 0 is the LSB. Wire it up to match:
 //     .addr({slot5, slot4, slot3, slot2, slot1, slot0})
-// Reversed, the design elaborates, synthesizes, and is wrong on most inputs.
-// See dwn2rtl docs/checkpoint-format.md §2.
+// Reverse it and the design still elaborates and synthesizes -- it's just wrong on most inputs.
+// (dwn2rtl docs/checkpoint-format.md §2)
 //
-// ⚠️ n <= 6, because TABLE is 64 bits: n inputs need 2**n entries, and past 64 Verilog
-// truncates SILENTLY, computing garbage for every address over 63. The emitter refuses n > 6.
+// ⚠️ n has to be <= 6, since TABLE is 64 bits. Anything wider needs 2**n entries and Verilog
+// drops the excess without a word, so every address past 63 returns garbage.
 
-// timescale: required because the testbench declares one, and xsim rejects a design that mixes
-// modules with and without it. Harmless for synthesis.
+// timescale: the testbench declares one, and xsim won't mix modules with and without it.
 `timescale 1ns / 1ps
 `default_nettype none
 
@@ -24,9 +22,8 @@ module lut_node #(
     output wire         out
 );
 
-    // The learned parameters ARE the table. A synthesis tool must map this to a single LUT6
-    // rather than inferring distributed RAM; it is worth checking that it did, because the
-    // area claim for a DWN depends on it. Confirmed on Vivado.
+    // The learned parameters are the table. Worth checking your tool maps this to a LUT6 and not
+    // distributed RAM -- the whole area story depends on it. Vivado does.
     assign out = TABLE[addr];
 
 endmodule

@@ -1,10 +1,10 @@
-// A pipeline stage that can be compiled out: ENABLE=1 inserts a register, ENABLE=0 is a bare
-// wire leaving no trace in the netlist. Depth is a build parameter, so one source covers every
-// latency and a design's latency is the sum of its enabled stages.
+// A pipeline stage you can compile out: ENABLE=1 gives a register, ENABLE=0 is a plain wire that
+// leaves nothing in the netlist. One source covers every depth, and the total latency is just
+// however many stages are switched on.
 //
-// ⚠️ No reset, deliberately -- these are feed-forward datapath registers, overwritten by real
-// data within LATENCY cycles of the first valid input. Whatever drives this must ignore the
-// outputs until the pipe has filled.
+// ⚠️ No reset. These are feed-forward datapath registers, so real data overwrites them within
+// LATENCY cycles of the first input -- but that means whatever drives this has to ignore the
+// output until the pipe has filled.
 
 `timescale 1ns / 1ps
 `default_nettype none

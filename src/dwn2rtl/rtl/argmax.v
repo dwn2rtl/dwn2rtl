@@ -1,11 +1,10 @@
-// Argmax over per-class popcounts, as a balanced tree of depth ceil(log2(K)).
+// Argmax over the per-class popcounts, as a balanced tree ceil(log2(K)) deep.
 //
-// ⚠️ TIE-BREAKING IS PART OF THE SPEC. Scores are small integers, so ties are common (~3% of
-// vectors). numpy and torch both return the LOWEST tied index, so the golden model does, so
-// this must. The rule enforcing it is the strict `>` at every merge: partners are compared
-// low-index-first and the higher-index candidate wins only by BEATING the lower, so equal
-// scores keep the lower index at every level and therefore overall. A `>=` anywhere would
-// disagree with the golden model on those ~3% while looking correct on the rest.
+// ⚠️ Ties are part of the spec, not an edge case -- scores are small integers, so roughly 3% of
+// vectors have one. numpy and torch both return the lowest tied index, so the golden model does
+// and so must this. The strict `>` at every merge is what enforces it: partners compare
+// low-index-first, and the higher index only wins by beating the lower, so a tie keeps the lower
+// index at every level and therefore overall. A `>=` anywhere would quietly disagree on that 3%.
 
 `timescale 1ns / 1ps
 `default_nettype none
@@ -21,21 +20,16 @@ module argmax #(
     localparam integer IW     = (K <= 1) ? 1 : $clog2(K);
     localparam integer LEVELS = (K <= 1) ? 0 : $clog2(K);
 
-    // One structure for every K -- no chain/tree switch at some class count, because nothing in
-    // the hardware changes there. Odd entries CARRY FORWARD rather than pair against padding: a
-    // carry is a rename, padding is a compare-select that exists only to be discarded.
+    // One shape for every K -- no chain-vs-tree switch at some class count, since nothing in the
+    // hardware changes there. Odd entries carry forward rather than pair against padding.
     //
-    // ⚠️ A MEASURED FALSE POSITIVE, not a silenced bug. UNOPTFLAT ("circular combinational
-    // logic") is reported on these arrays and is FATAL by default, so a user linting an emitted
-    // design would be told their hardware has a loop. It has none: lvl_*[l+1] reads only
-    // lvl_*[l], so the level index strictly increases. The analysis is per-SIGNAL and one
-    // signal holds every level, so the array appears to depend on itself -- proven with a
-    // control, since a plain adder tree of the same shape raises the identical warning.
-    // Restructuring buys nothing measurable (sim time is unchanged), so it is waived here.
+    // The waiver below is a false positive: lvl_*[l+1] only ever reads lvl_*[l], so there is no
+    // loop. The check works per-signal and one signal holds every level, so the array looks
+    // self-referential -- a plain adder tree of the same shape warns identically. Restructuring
+    // measured no faster, so it stays as it is.
     //
-    // ⚠️ EDITORS: never begin a comment line with the word "verilator" -- it is read as a
-    // PRAGMA and the prose after it is rejected, an ERROR that stops linting while iverilog
-    // still prints PASS. tests/test_lint.py pins this.
+    // ⚠️ Don't start a comment line with the word "verilator": it's read as a pragma, and the
+    // sentence after it becomes an error. tests/test_lint.py pins that.
     /* verilator lint_off UNOPTFLAT */
     wire [W-1:0]  lvl_score [0:LEVELS][0:K-1];
     wire [IW-1:0] lvl_index [0:LEVELS][0:K-1];
@@ -53,9 +47,8 @@ module argmax #(
             localparam integer NEXT = (N + 1) >> 1;
             for (i = 0; i < NEXT; i = i + 1) begin : g_node
                 if (2*i + 1 < N) begin : g_pair
-                    // Left is the lower-index half; the right-hand candidate wins only by
-                    // beating it outright, so equal scores keep the lower index at every
-                    // level -- and therefore overall, which is the golden model's rule.
+                    // Left is the lower index, and right only wins by beating it -- so a tie
+                    // keeps the lower index.
                     wire right_wins = lvl_score[l][2*i + 1] > lvl_score[l][2*i];
                     assign lvl_score[l+1][i] =
                         right_wins ? lvl_score[l][2*i + 1] : lvl_score[l][2*i];
