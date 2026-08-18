@@ -83,22 +83,14 @@ Neither is a wrapper around a subprocess. They are two entry points into the sam
 
 ### The package
 
-Once it is published:
-
 ```
 pip install dwn2rtl
-```
-
-Until then, from source:
-
-```
-pip install git+https://github.com/Krithik4/dwn2rtl.git
 ```
 
 or, to hack on it:
 
 ```
-git clone https://github.com/Krithik4/dwn2rtl.git
+git clone https://github.com/dwn2rtl/dwn2rtl.git
 cd dwn2rtl
 pip install -e ".[dev]"
 ```

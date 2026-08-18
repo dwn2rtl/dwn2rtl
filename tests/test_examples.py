@@ -102,13 +102,22 @@ def test_readme_links_into_this_repo_resolve():
     assert not missing, f'README links to untracked or missing files: {missing}'
 
 
-def test_readme_does_not_promise_a_pypi_package_that_does_not_exist():
-    """`pip install dwn2rtl` is the right instruction the day it is published and a lie until
-    then. Delete this test at the same moment it becomes true."""
+def test_readme_tells_people_how_to_install_it():
+    """Replaces test_readme_does_not_promise_a_pypi_package_that_does_not_exist, which asserted
+    the OPPOSITE and was correct until 0.1.0 went to PyPI. Its docstring said to delete it at
+    exactly that moment, so it was.
+
+    ⚠️ The README is baked into the uploaded artifact, so PyPI renders whatever this file said
+    when the wheel was BUILT -- an install line is frozen on the project page for that version.
+    That is why the instruction has to be right before the build rather than after the upload,
+    and why it is worth a test rather than a memory.
+    """
     root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     readme = open(os.path.join(root, 'README.md'), encoding='utf-8').read()
-    assert 'pip install dwn2rtl\n' not in readme, \
-        'dwn2rtl is not on PyPI; use the git install until it is'
+    assert 'pip install dwn2rtl\n' in readme, \
+        'the README must tell users the published install command'
+    assert 'pip install git+' not in readme, \
+        'the git install was for the pre-PyPI era; it points at a stale org path now'
 
 
 def test_readme_points_at_the_example_that_exists():

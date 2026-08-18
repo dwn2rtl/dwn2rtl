@@ -5,7 +5,7 @@ along with the means to prove, in your own simulator, that the Verilog computes 
 as the model.**
 
 ```bash
-pip install git+https://github.com/Krithik4/dwn2rtl.git
+pip install dwn2rtl
 ```
 
 ```bash
@@ -38,8 +38,6 @@ RESULT   PASS
 ```
 
 That is a real MNIST model, not an illustration.
-
-> Not on PyPI yet, hence the git install above.
 
 ---
 
