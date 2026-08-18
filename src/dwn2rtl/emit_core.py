@@ -29,17 +29,9 @@ PIPE_OUT = 1
 def table_to_hex(row):
     """bool[2**n] -> integer where bit `addr` is row[addr].
 
-    Written as an explicit loop, not np.packbits. packbits pads a partial byte on the LOW side
-    with bitorder='big', so a table shorter than 8 entries came out shifted left: at n=2 the
-    4-entry table [1,1,1,0] emitted as 0x70 instead of 0x07 and every entry sat at the wrong
-    address. n>=3 was unaffected (2**n is then a whole number of bytes), which is why n=6 never
-    showed it.
-
-    That mattered more than a normal off-by-one: small n is exactly where a design is also
-    expected to fail for unrelated reasons (routing congestion), so a gate failure caused by
-    this bug would have been indistinguishable from an expected hardware limit.
-
-    n <= 6, so at most 64 iterations per node -- clarity beats vectorization here.
+    An explicit loop, not np.packbits: packbits pads a partial byte on the low side, so a
+    4-entry table emitted as 0x70 instead of 0x07. Only n < 3 was affected, which is why n=6
+    never showed it.
     """
     v = 0
     for addr, bit in enumerate(row):
@@ -55,14 +47,8 @@ def emit(ck, out_path, pipe_lut=PIPE_LUT, pipe_pop=PIPE_POP, pipe_out=PIPE_OUT):
     cfg = ck['config']
     n, num_classes = cfg['n'], cfg['num_classes']
 
-    # n > 6 would emit a 2**n-bit table into a 64-bit parameter and Verilog would TRUNCATE it
-    # silently -- the design elaborates, synthesizes, and computes garbage for every address
-    # above 63. Same shape as the n=2 packing bug: valid-looking, totally wrong.
-    #
-    # Supporting n=8 is not just a width change. Three things move together (this format string,
-    # `parameter [63:0] TABLE` in rtl/lut_node.v, and verify_emitted's `64'h([0-9A-F]{16})`
-    # regex) -- but more importantly one node would no longer BE one LUT6, which is the
-    # architectural premise the whole approach rests on. A different tool, not a wider parameter.
+    # ⚠️ n > 6 overflows the 64-bit TABLE parameter and Verilog truncates it silently. Widening
+    # it is not a width change: one node would stop being one LUT6.
     assert n <= MAX_N, (
         f'n={n} exceeds MAX_N={MAX_N}. A {2**n}-entry table does not fit the 64-bit TABLE '
         f'parameter and would be silently truncated. Supporting it requires changing '
@@ -74,11 +60,8 @@ def emit(ck, out_path, pipe_lut=PIPE_LUT, pipe_pop=PIPE_POP, pipe_out=PIPE_OUT):
     for i in layer_indices(sd):
         layers.append((extract_tables(sd, i), *extract_wiring(sd, i, n)))
 
-    # The encoder's output width, read from the thresholds themselves -- (features, z), so
-    # .size is features x z. NEVER a literal feature count -- in the study this was once
-    # `16 * z`, one dataset's feature count written in, and it did not fail loudly: it emits a
-    # core whose input port is the wrong width, which elaborates and then disagrees with the
-    # encoder. emit_encoder.py derives it the same way, from the same array.
+    # From the thresholds, (features, z), never a literal feature count -- one dataset's count
+    # written in here emits a core whose input port silently disagrees with the encoder.
     input_bits = ck['thermometer']['thresholds'].numpy().size
     final_width = layers[-1][0].shape[0]
     group = final_width // num_classes
@@ -90,15 +73,8 @@ def emit(ck, out_path, pipe_lut=PIPE_LUT, pipe_pop=PIPE_POP, pipe_out=PIPE_OUT):
     L.append(f"// run        : {ck.get('run_name', '(unnamed)')}")
     L.append(f"// config     : n={n}, layers={cfg['layers']}, z={cfg['thermometer_bits']}, "
              f'classes={num_classes}')
-    # Accuracy is METADATA -- it reaches this comment and nothing else, and no part of the
-    # emitted hardware depends on it. It was read unconditionally, which made a training
-    # statistic a hard requirement for emitting a design: a user who saved a model without
-    # recording one got a KeyError from a code generator, over a comment.
-    #
-    # Absent is reported as absent. Defaulting to 0.0 would print "final 0.0000" into the
-    # header of a perfectly good design, which reads as "this model scores zero" rather than
-    # "nobody wrote it down" -- a comment that confidently states a wrong number is worse than
-    # no comment.
+    # Metadata only -- it reaches this comment and nothing else. Absent is reported as absent:
+    # defaulting to 0.0 would print "this model scores zero" instead of "nobody wrote it down".
     results = ck.get('results') or {}
     if 'final_acc' in results:
         best = results.get('best_acc')

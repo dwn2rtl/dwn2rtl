@@ -1,23 +1,11 @@
 """checkpoint -> a self-contained directory of Verilog, parameters and golden vectors.
 
-This is the whole tool in one function; everything else is a component or a wrapper.
+⚠️ Order matters. build_core writes dwn_core_params.vh; build_encoder READS it back for the
+pipeline depth rather than being told again, since dwn_top's parameters override the core's and
+two independent answers could disagree. It raises FileNotFoundError if called first.
 
-⚠️ ORDER IS LOAD-BEARING, not conventional:
-
-    build_core      emits dwn_core.v AND dwn_core_params.vh
-    build_encoder   READS dwn_core_params.vh for the core's real pipeline depth, then emits the
-                    encoder, dwn_top.v and dwn_top_params.vh
-    generate        writes the vectors, using the layers build_core already extracted
-
-dwn_top instantiates dwn_core and passes PIPE_LUT/PIPE_POP/PIPE_OUT down, so its parameters
-OVERRIDE the core's. Told the depth independently the two could disagree, giving a top whose
-latency constant does not match its own pipeline; reading it back from the file the core just
-wrote makes that impossible rather than unlikely. build_encoder raises FileNotFoundError if
-called first.
-
-⚠️ THE INVARIANT THAT MUST NOT BREAK: vectors and RTL derive from the SAME checkpoint, or you
-ship a testbench that passes against wrong RTL -- worse than shipping none. build() loads once
-and hands build_core's layers straight to generate(); nothing downstream may re-open the file.
+⚠️ Vectors and RTL must come from the SAME checkpoint, or the testbench passes against wrong
+RTL. build() loads once and passes the layers along; nothing downstream may re-open the file.
 """
 
 import os
@@ -70,15 +58,10 @@ class BuildReport:
     def lines(self):
         """The build report as ASCII lines, for the CLI to print.
 
-        ASCII ONLY (CLAUDE.md): Windows consoles default to cp1252 and raise
-        UnicodeEncodeError on an emoji in print(), which turns a successful build into a
-        traceback.
+        ⚠️ ASCII only -- Windows consoles raise on an emoji in print().
 
-        EVERY DERIVED NUMBER SAYS WHERE IT CAME FROM. The right-hand column is the point of
-        this report, not decoration: `integer bits 0` and `frac bits 8` look equally
-        authoritative, and one is exact while the other is either a proof or a guess depending
-        on whether --input-bits was given. A tool that prints them identically invites both
-        being trusted the same amount.
+        The right-hand column is the point, not decoration: `integer bits` is exact while
+        `frac bits` may be a proof or a guess, and printing them identically invites equal trust.
         """
         p = self.precision
         distinct, total, collapsed = self.merge
@@ -141,11 +124,8 @@ def _copy_package_rtl(outdir):
     for name in TESTBENCHES:
         data = (rtl / 'tb' / name).read_bytes()
         if not data.strip():
-            # An empty testbench must not be copied. A zero-byte file in tb/ makes the output
-            # directory LOOK complete while that level's gate silently does nothing -- exactly
-            # the "green light nobody has reason to distrust" this module's docstring warns
-            # about. Reported as a warning instead, so it is visible at build time rather than
-            # discovered as a suspiciously fast PASS.
+            # An empty testbench would make the directory look complete while that level's
+            # gate does nothing. Warn at build time instead of shipping a fast fake PASS.
             skipped.append(name)
             continue
         dest = os.path.join(tb_dir, name)
@@ -159,13 +139,10 @@ def _copy_package_rtl(outdir):
 def build(checkpoint, outdir, input_bits=None, pipeline=None, n_random=None, seed=None):
     """Emit a complete, self-contained design directory. The tool's one real entry point.
 
-    checkpoint   a path, or anything checkpoint.normalize() accepts (a saved dict, a
-                 {'model':..., 'thermometer':...} pair). Loaded ONCE, here.
-    input_bits   the INPUT's precision -- 8-bit pixels -> 8. Never fractional bits; see
-                 precision.py. None means a continuous input, which takes a default and is
-                 reported as unproved rather than presented as safe.
-    pipeline     a config.Pipeline. The default is the study's shipped depth, chosen by
-                 measurement rather than intuition.
+    checkpoint   a path, or anything checkpoint.normalize() accepts. Loaded ONCE, here.
+    input_bits   the INPUT's precision -- 8-bit pixels -> 8, never fractional bits. None means
+                 a continuous input, which takes a default and is reported as unproved.
+    pipeline     a config.Pipeline.
     """
     from . import checkpoint as ckpt
 
@@ -197,11 +174,9 @@ def build(checkpoint, outdir, input_bits=None, pipeline=None, n_random=None, see
 
     warnings = []
 
-    # The input contract. Thresholds live in whatever feature space training used, so if that
-    # space was scaled, whatever drives x_flat must apply the SAME scaling with the SAME fitted
-    # parameters before quantizing. Get it wrong and the design runs at chance while looking
-    # entirely healthy -- so the numbers are WRITTEN OUT, not merely mentioned. Telling a user
-    # "apply your scaler" while withholding its parameters is not a warning, it is a riddle.
+    # ⚠️ The input contract: if training scaled its features, whatever drives x_flat must apply
+    # the same scaling first. The parameters are written out, not just mentioned -- "apply your
+    # scaler" without them is a riddle, not a warning.
     scaler = ck.get('scaler')
     scaling_path = os.path.join(outdir, 'input_scaling.json')
     if scaler and 'mean' in scaler:

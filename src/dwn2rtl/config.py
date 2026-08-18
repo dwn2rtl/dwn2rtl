@@ -16,15 +16,10 @@ from .precision import Precision
 
 @dataclass(frozen=True)
 class Pipeline:
-    """Where the registers go. Each is a stage count; 0 compiles that stage out entirely.
+    """Where the registers go. Each is a stage count; 0 compiles that stage out.
 
-    Defaults match the study's shipped depth, which was chosen by measurement rather than
-    intuition: out-of-context synthesis put 10.194 ns in the core against 2.962 ns in the
-    encoder, so the depth belongs in the popcount and argmax trees, and there is a stage after
-    each of them.
-
-    Latency is the sum of the enabled stages; throughput is one result per clock regardless
-    (II=1), so depth trades latency for Fmax and nothing else.
+    Latency is the sum of the enabled stages. Throughput is one result per clock either way, so
+    depth trades latency for Fmax and nothing else.
     """
 
     enc: int = 1     # after the comparators
@@ -39,11 +34,8 @@ class Pipeline:
                 raise ValueError(f'pipeline depth {name}={v} must be >= 0')
 
     def latency(self, n_layers):
-        """End-to-end cycles for a model with `n_layers` LUT layers.
-
-        Informational only. The authoritative number is the one emit_core writes into
-        dwn_core_params.vh, which the testbench reads -- so a depth change cannot leave the
-        testbench comparing against the wrong cycle.
+        """End-to-end cycles. Informational -- dwn_core_params.vh holds the authoritative
+        number, and the testbench reads that.
         """
         return self.enc + self.lut * n_layers + self.pop + self.out
 
@@ -52,10 +44,8 @@ class Pipeline:
 class BuildConfig:
     """One build: where it goes, at what precision, with which registers.
 
-    `precision` has no default on purpose. It is derived per model by
-    precision.precision_for(), because the integer width depends on the thresholds -- a default
-    here would be one model's format silently applied to another, which is the exact defect
-    that cost the study six separate crashes.
+    ⚠️ `precision` has no default -- integer width depends on the thresholds, so a default here
+    is one model's format silently applied to another.
     """
 
     outdir: str

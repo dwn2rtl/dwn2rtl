@@ -1,25 +1,15 @@
 """Emit the thermometer encoder and the top-level wrapper from a checkpoint.
 
-The encoder is the piece published DWN resource totals leave out -- they exclude the
-binarization front end entirely, and Mecik & Kumm measured that omission at up to 3.2x the
-reported LUTs. On a large network it may not matter; on a small one it dominates. In the study's
-smallest model the encoder was FOURTEEN TIMES the network it fed: 50 LUT6 nodes against 202
-comparators.
-
-⚠️ So encoder and core are emitted as SEPARATE modules wired by a thin top. That is not
-tidiness -- it is what lets each be synthesized alone and reported separately, which this tool
-does unconditionally.
-
-What gets built:
   thermometer_encoder.v   one comparator per USED thermometer bit, constants folded in
   dwn_top.v               encoder -> core
   dwn_top_params.vh       end-to-end latency
 
-Only thermometer bits some node actually reads get a comparator; the rest are tied low, so they
-cost nothing after synthesis while dwn_core keeps its full input width unchanged.
+⚠️ Encoder and core are separate modules on purpose: it is what lets each be synthesized and
+reported alone. Published DWN totals omit the encoder, and on the smallest model measured it was
+fourteen times the network it fed.
 
-`precision` is a REQUIRED argument -- there is no dataset lookup behind it, because a caller
-that does not know the word width must not be given a silent default. See precision.py.
+Only bits some node actually reads get a comparator; the rest are tied low and cost nothing.
+`precision` is required, never defaulted -- see precision.py.
 """
 
 import os
@@ -196,13 +186,8 @@ def verify_emitted(path, used, thr_q, z, word):
 def build_encoder(ck, outdir, precision, pipe_enc=1):
     """Emit thermometer_encoder.v + dwn_top.v + dwn_top_params.vh, then read back and check.
 
-    Replaces the study's argparse `main()`. `precision` is a precision.Precision -- there
-    is no default and no dataset lookup behind it, because a caller that does not know the word
-    width does not know enough to emit an encoder.
-
-    MUST run after build_core(): the core's pipeline depth is read out of dwn_core_params.vh
-    rather than passed in a second time, so the two emitters cannot be handed contradicting
-    depths and produce a top whose latency constant does not match its own pipeline.
+    ⚠️ Must run after build_core(): the pipeline depth is read out of dwn_core_params.vh rather
+    than passed again, so the two emitters cannot be given contradicting depths.
     """
     from .extract import layer_indices, extract_tables, extract_wiring
     from .precision import required_int_bits

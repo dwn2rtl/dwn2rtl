@@ -1,20 +1,14 @@
 // GATE 1, TOP LEVEL -- quantized features in, class index out.
 //
-// The companion to dwn_core_tb, which drives PRE-BINARIZED bits and so tests the LUT network
-// alone. This one drives quantized FEATURES through the thermometer encoder as well, and the
-// split is what makes a failure localize itself:
+// Quantized features through the encoder AND the core -- the other half of dwn_core_tb, which
+// drives pre-binarized bits. Read the pair together:
 //
 //     core PASS, top FAIL   -> the encoder. Nothing else needs re-examining.
-//     core FAIL, top FAIL   -> the network; fix that first, this will follow.
+//     core FAIL, top FAIL   -> the network; fix that first, this follows.
 //
-// The encoder is what this level adds, and it is the half published DWN resource counts leave
-// out -- intrinsic to a DWN, not preprocessing, and on the smallest studied model fourteen
-// times the network it feeds. An unverified encoder is most of an unverified design.
+// Vectors stream one per cycle and are checked LATENCY cycles later, which is what proves II=1.
 //
-// Vectors stream back-to-back, one per cycle, checked LATENCY cycles later: that is what proves
-// II=1. A design that computed correctly but stalled would pass a one-at-a-time testbench.
-//
-// ⚠️ LATENCY and IDX_W come from dwn_top_params.vh, never hardcoded. An earlier testbench fixed
+// ⚠️ LATENCY and IDX_W come from dwn_top_params.vh, never hardcoded. One earlier testbench fixed
 // IDX_W at 3, so a 10-class design was checked on three of its four index bits -- and passed.
 
 `timescale 1ns / 1ps

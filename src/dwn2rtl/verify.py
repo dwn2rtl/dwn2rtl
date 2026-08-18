@@ -1,22 +1,15 @@
 """Find a simulator, compile the emitted design, run its testbenches, report PASS or FAIL.
 
-⚠️ THIS IS THE GATE. Emitted RTL is not correct until a simulator says it matches the golden
-model on every vector -- not "looks right", not "the emitter's read-back passed". The study has
-a case where an emitter's own read-back reported 20/20 correct while the design was wrong on 958
-of 1,504 vectors.
+⚠️ This is the gate. RTL is not correct until a simulator says it matches the golden model on
+every vector -- an emitter's own read-back once reported 20/20 while the design was wrong on 958
+of 1,504. And the USER runs it, which is what makes bit-exactness reproducible rather than
+claimed.
 
-What makes it useful is that the USER runs it: shipping self-checking testbenches turns
-bit-exactness from a claim they must trust into something they reproduce on their own machine.
-No part of it needs a vendor licence.
+⚠️ Finding the simulator is half the job: winget installs iverilog to C:\\iverilog\\bin and adds
+nothing to PATH, so PATH is tried first and then where installers actually put it.
 
-⚠️ FINDING THE SIMULATOR IS HALF THE JOB. `winget install Icarus.Verilog` succeeds, installs to
-C:\\iverilog\\bin, and adds NOTHING to PATH. A PATH-only search would tell a user who plainly has
-a simulator that they have none -- so PATH is tried first, then where installers actually put it.
-
-TWO LEVELS, ALWAYS BOTH. dwn_core_tb drives pre-binarized bits; dwn_top_tb drives quantized
-features through the encoder. Top failing while core passes means the encoder, and nothing else
-needs re-examining. A missing testbench is MISSING and fails the run -- never quietly skipped,
-because "nothing checked it" must not read as success.
+Both levels always run. A missing testbench is MISSING and fails -- "nothing checked it" must
+not read as success.
 """
 
 import os

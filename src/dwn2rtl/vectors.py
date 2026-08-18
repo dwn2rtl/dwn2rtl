@@ -1,24 +1,14 @@
-"""Generate self-checking testbench vectors from the model alone.
+"""Testbench vectors, generated from the model alone.
 
-Random inputs, not real samples, and deliberately so:
+Random inputs rather than real samples: the gate proves the Verilog matches extract.forward(),
+and random vectors plus edge cases hit the tie-breaks and saturation boundaries that clustered
+real data misses.
 
-  ⚠️ THE GATE IS RTL-VERSUS-GOLDEN-MODEL, NOT RTL-VERSUS-DATASET.
+⚠️ Vectors and RTL must come from the SAME checkpoint, or the testbench passes against wrong
+RTL. build() does both from one load.
 
-What must be proved is that the Verilog computes the same function as extract.forward(). Real
-samples are a biased sample of that domain -- they cluster where the data clusters, which is
-where nothing interesting happens -- while random vectors plus deliberate edge cases cover the
-tie-breaks and saturation boundaries. (Real data would prove the model is ACCURATE, a training
-question this tool has no opinion about.)
-
-⚠️ THE INVARIANT THAT MUST NOT BREAK: vectors and RTL derive from the SAME checkpoint. Otherwise
-you ship a testbench that passes against wrong RTL -- worse than shipping none, because it is a
-green light nobody has reason to distrust. build() does both from one load; nothing here should
-grow a `--checkpoint` of its own.
-
-Two levels, so a failure in one cannot hide in the other:
-
-  core   binarized vectors      -> dwn_core   (x_binarized.hex, expected.hex)
-  top    quantized features     -> dwn_top    (x_quant.hex, expected_top.hex)
+  core   binarized vectors    -> dwn_core   (x_binarized.hex, expected.hex)
+  top    quantized features   -> dwn_top    (x_quant.hex, expected_top.hex)
 """
 
 import os
@@ -63,12 +53,9 @@ def write_lines(path, lines):
 def _core_vectors(width, rng, n_random):
     """Binarized vectors for dwn_core: edge cases first, then random.
 
-    The four edge patterns are chosen to break structural bugs rather than to look thorough.
-    All-zeros and all-ones drive every node to opposite table corners. The two alternating
-    patterns are the ones that catch a swapped or off-by-one wiring index: under either, a
-    node reading bit b and a node reading bit b+1 see DIFFERENT values, so a misrouted index
-    changes the answer. Uniform patterns cannot detect that -- every wiring is right when all
-    the bits agree.
+    All-zeros and all-ones drive every node to opposite table corners. The alternating patterns
+    are what catch a swapped wiring index -- adjacent bits differ, so a misroute changes the
+    answer, which uniform patterns can never show.
     """
     edge = np.stack([
         np.zeros(width, dtype=bool),
@@ -83,24 +70,12 @@ def _core_vectors(width, rng, n_random):
 def _top_vectors(thr_q, used, z, n_features, precision, rng, n_random):
     """Quantized feature vectors for dwn_top: edge cases first, then random.
 
-    WHERE THE RANGE COMES FROM. The study drew random features between the min and max of
-    the real test set. With no dataset, the range is taken from the THRESHOLDS instead: span
-    them, then push a margin past both ends. This is strictly better for the job. A comparator
-    against threshold t is only exercised by inputs on both sides of t, and a data-derived
-    range guarantees that only for thresholds the data actually straddles. Spanning the
-    thresholds guarantees it for all of them.
+    The range spans the THRESHOLDS with a margin, not a dataset's min/max -- a comparator is
+    only exercised by inputs on both sides of it, and spanning the thresholds guarantees that
+    for all of them.
 
-    THE EDGE CASES, and why each one exists:
-
-      all-zeros, all-min, all-max   rail every comparator in both directions, including the
-                                    word's two's-complement extremes
-      exactly-on-threshold          q_x == T must give 0, because the comparison is strict `>`.
-                                    This is the encoder's equivalent of the argmax tie case: a
-                                    `>=` implementation passes every other vector in this file
-                                    and fails only here
-      one-above-threshold           q_x == T+1 must give 1. Pairs with the above -- together
-                                    they pin the boundary from both sides, so an off-by-one in
-                                    either direction is caught rather than half of them
+    Edge cases: all-zeros/min/max rail every comparator; q_x == T must give 0 (the compare is
+    strict `>`) and q_x == T+1 must give 1, which pins the boundary from both sides.
     """
     word = precision.word_bits
     lo_word, hi_word = -(2 ** (word - 1)), 2 ** (word - 1) - 1

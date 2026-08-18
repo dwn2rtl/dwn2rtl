@@ -1,25 +1,14 @@
-"""What a checkpoint IS -- the format, both ends of it, and the errors that stop a wrong one.
+"""What a checkpoint is, and the errors that stop a wrong one.
 
-Upstream DWN saves nothing, so there is no "DWN checkpoint" in the wild and any format is one
-this tool invented (roadmap Q8).
+Upstream DWN saves nothing, so this format is one the tool invented. Three shapes are accepted:
+a plain {'model', 'thermometer'} dict, the study's older {config, state_dict, ...} form, and a
+live model via from_model().
 
-⚠️ A DWN IS TWO OBJECTS. The thermometer's thresholds are fitted BEFORE training and are not
-model parameters, so they are absent from `state_dict` -- which holds only the LUTs, the mapping
-and a dummy. `torch.save(model.state_dict())`, what every PyTorch user reaches for, therefore
-SILENTLY LOSES THE ENCODER, and the encoder can be fourteen times the network it feeds. Such a
-file would emit a design that synthesizes cleanly, reports a plausible area, and classifies at
-chance -- so this module refuses it by name and says what to do instead.
+⚠️ A DWN is TWO objects. Thresholds are fitted before training and are not model parameters, so
+`torch.save(model.state_dict())` -- what everyone reaches for -- silently loses the encoder, and
+the encoder can be most of the design. That file is refused by name rather than built from.
 
-Three accepted shapes, because no user arrives already holding our format:
-
-    {'model': nn.Module, 'thermometer': ...}     plain torch.save -- the primary path, needing
-                                                 no dwn2rtl import in a training script
-    {config, state_dict, thermometer, results}   the study's existing checkpoints
-    a live model + thermometer                   from_model(), for the moment training ends
-
-⚠️ NOTHING HERE IMPORTS THE UPSTREAM DWN PACKAGE. Every fact is read from tensors and duck-typed
-attributes, so converting a checkpoint needs no `torch_dwn`, and an upstream bump cannot break
-loading.
+Nothing here imports the upstream package; every fact is duck-typed off the tensors.
 """
 
 import re
@@ -28,21 +17,13 @@ from collections.abc import Mapping
 import numpy as np
 import torch
 
-# The keys a normalized checkpoint always has. `results` and `run_name` are metadata -- they
-# reach the emitted file's header comment and nothing else -- but they are guaranteed present so
-# that consumers can read them without defensive .get() chains at every site.
-# The upstream commit this module's understanding of the format was READ FROM. Not a dependency
-# and not a runtime check -- nothing here imports torch_dwn, and a user's model may well have
-# been trained against a different commit. It is provenance: it says which source the rules in
-# docs/checkpoint-format.md were verified against, so that when upstream changes, what has to be
-# re-read is a known quantity rather than a guess.
-#
-# ⚠️ Do not turn this into a version assertion. The whole reason loading is duck-typed is that a
-# rename upstream should surface as a clear failure here, not as a refusal to load checkpoints
-# that are perfectly fine.
+# Provenance: the commit docs/checkpoint-format.md was verified against. Not a dependency and
+# not a runtime check -- loading is duck-typed, so a user's model may be trained against another.
+# ⚠️ Do not turn this into a version assertion.
 UPSTREAM_URL = 'https://github.com/alanbacellar/DWN'
 UPSTREAM_COMMIT = '9f887a0b4bd84dabf6d8c9ae35368ab2a7e0e3c0'
 
+# Always present after normalize(), so consumers need no defensive .get() chains.
 REQUIRED_CONFIG = ('n', 'num_classes', 'layers', 'thermometer_bits')
 
 _LAYER_KEY = re.compile(r'(\d+)\.(luts|mapping|mapping\.weights|_LUTLayer__dummy_mapping)$')
@@ -99,15 +80,9 @@ def _thresholds_of(thermometer):
 def _scaler_of(obj, n_features):
     """The input scaling the model was TRAINED with, if the checkpoint records one.
 
-    ⚠️ THIS IS PART OF THE HARDWARE'S INPUT CONTRACT, not metadata. Thresholds live in whatever
-    feature space training used. If that space was standard-scaled, whatever drives x_flat must
-    apply the SAME scaling with the SAME fitted parameters before quantizing -- and if it does
-    not, the design runs at chance while looking entirely healthy doing it.
-
-    Dropping it silently was a real defect, found by testing against a real earlier
-    checkpoint: JSC carries {'mean', 'scale'} and the normalized form threw it away, while the
-    emitted encoder's own header claimed "the checkpoint carries the scaler for this reason".
-    A user following that instruction would have found nothing to follow it with.
+    ⚠️ Part of the hardware's input contract, not metadata. Thresholds live in whatever feature
+    space training used, so whatever drives x_flat must apply the same scaling first -- without
+    it the design runs at chance and looks healthy doing it.
     """
     if not isinstance(obj, Mapping):
         return None
@@ -407,14 +382,8 @@ def load(path):
 def save(model, thermometer, path, run_name=None, results=None, scaler=None):
     """Write a checkpoint from live objects. Sugar over `torch.save`, not a requirement.
 
-    A user who would rather not import dwn2rtl in their training script can write the same
-    thing themselves, and the README documents that as the primary path:
-
-        torch.save({'model': model, 'thermometer': thermometer}, path)
-
-    The difference is that this validates NOW, at save time, while the objects are still in
-    memory and a mistake is one line from being fixed -- rather than at build time, possibly on
-    another machine, weeks later.
+    The point is that it validates NOW, while the objects are in memory, rather than at build
+    time on another machine weeks later.
     """
     ck = from_model(model, thermometer, run_name=run_name, results=results, scaler=scaler)
     torch.save(ck, path)

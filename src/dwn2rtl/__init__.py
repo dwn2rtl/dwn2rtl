@@ -1,42 +1,21 @@
 """dwn2rtl -- a trained DWN goes in, synthesizable Verilog comes out.
 
-Two ways in, one implementation behind both (overview.md §2):
+    dwn2rtl build model.pt --out rtl/     the terminal command
+    import dwn2rtl                        the same code, for a model still in memory
 
-    dwn2rtl build model.pt --out rtl/     the terminal command, the primary path
-    import dwn2rtl                        the same code, for when the model is still live
-
-WHAT THIS MODULE DELIBERATELY DOES NOT DO: import torch.
-
-Every emitter and the golden model are pure numpy; torch is needed only to read a checkpoint.
-Importing `dwn2rtl` therefore costs a numpy import, not a torch one -- which matters because
-torch is seconds of startup and hundreds of megabytes, and a user running `dwn2rtl verify` on an
-already-emitted directory has no checkpoint to read at all. The submodules that need torch
-(`extract`, `checkpoint`) import it themselves, at their own import time.
-
-Keeping that boundary sharp is also what would make a torch-free path possible later, via an
-.npz intermediate, without rewriting anything downstream.
+⚠️ Importing this must not pull in torch. Only reading a checkpoint needs it -- everything else
+is numpy -- and `dwn2rtl verify` reads no checkpoint at all, so paying seconds of torch startup
+for it would be pure waste. The submodules that need torch import it themselves.
 """
 
 __version__ = '0.1.0'
 
-# Phase 0 exposes only what exists and works standalone -- the precision policy and the build
-# configuration, neither of which needs a checkpoint or torch.
-#
-# `build()`, `save()` and `from_model()` are the public API this file is ultimately for. They
-# arrive in Phase 1, once checkpoint.py defines what a checkpoint is; adding stubs for them now
-# would mean `hasattr(dwn2rtl, 'build')` answering True for something that cannot build.
-# See docs/phase0-ledger.md.
+# Eager: neither needs a checkpoint or torch.
 from .config import BuildConfig, Pipeline
 from .precision import Precision, precision_for, required_int_bits
 
-# The checkpoint API is reached LAZILY, via the module __getattr__ below (PEP 562).
-#
-# `dwn2rtl.load(...)` and `dwn2rtl.save(...)` work exactly as if they were imported here, but
-# `import dwn2rtl` still does not pull torch in -- checkpoint.py imports torch at module level,
-# so a plain `from .checkpoint import load` at the top of this file would silently cost every
-# invocation a multi-second torch import, including `dwn2rtl verify`, which never reads a
-# checkpoint at all. That invariant has a test; this is how the API is offered without breaking
-# it.
+# Lazy, via module __getattr__ (PEP 562). These behave as if imported here, but importing them
+# eagerly would drag torch into every invocation. There is a test for that.
 _LAZY = {
     'load': 'checkpoint',
     'save': 'checkpoint',

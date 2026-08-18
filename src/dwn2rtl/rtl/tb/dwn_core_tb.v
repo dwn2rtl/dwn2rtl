@@ -1,17 +1,12 @@
 // GATE 1 -- the one non-negotiable rule.
 //
-// The core is not correct until it matches the golden software model bit-exactly on every
-// vector, and this testbench is that check -- the only correctness signal there is, since no
-// second independent implementation exists to cross-check against.
+// The LUT core against the golden model, on pre-binarized inputs. The encoder is checked
+// separately by dwn_top_tb, so a failure points at one of the two rather than both.
 //
-// Scope: the LUT CORE, driven with pre-binarized inputs. The thermometer encoder is checked
-// separately by dwn_top_tb, so a failure localizes instead of implicating the whole design.
+// Vectors stream one per cycle and are checked LATENCY cycles later, which is what proves II=1.
 //
-// Vectors stream back-to-back, one per cycle, checked LATENCY cycles later: that is what proves
-// II=1. A design that computed correctly but stalled would pass a one-at-a-time testbench.
-//
-// ⚠️ LATENCY comes from dwn_core_params.vh, never hardcoded -- otherwise a depth change
-// silently becomes an off-by-one comparison against the wrong vector.
+// ⚠️ LATENCY comes from dwn_core_params.vh, never hardcoded -- otherwise a depth change quietly
+// becomes an off-by-one against the wrong vector.
 
 `timescale 1ns / 1ps
 `default_nettype none

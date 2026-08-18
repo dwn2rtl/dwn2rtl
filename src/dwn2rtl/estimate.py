@@ -1,25 +1,16 @@
-"""Synthesize an emitted design with yosys and report what it costs. Optional, and honest.
+"""Synthesize an emitted design with yosys and report what it costs. Optional.
 
-For answering "will this fit?" before committing to a real synthesis run. It is not a substitute
-for one, and the calibration below says exactly how much it is not.
-
-⚠️ CALIBRATED AGAINST VIVADO on an xc7a35t, before this file was written (docs/phase4-ledger.md):
+⚠️ Calibrated once against Vivado on an xc7a35t (docs/phase4-ledger.md):
 
     dwn_core              110 yosys   vs   110 Vivado    1.00x   trustworthy
     thermometer_encoder   717 yosys   vs  1519 Vivado    0.47x   HALF
-    dwn_top               833 yosys   vs  1621 Vivado    0.51x
 
-The core lands exactly. The encoder is 2.1x low, and not because yosys is wrong: a 16-bit signed
-comparison against a constant genuinely fits in ~3 LUT6s, while Vivado maps comparators onto
-carry chains that cost more. Generic mapping is simply optimistic for comparator-heavy logic.
+The core lands exactly; the encoder reads 2.1x low because generic mapping packs comparators
+more tightly than carry chains do. So counts are reported PER MODULE, never summed into one
+vendor-looking number, and the encoder-to-core ratio always carries that caveat -- it is 13.8x
+by Vivado against 6.5x here, and this project exists to publicise that ratio.
 
-⚠️ So this reports PER-MODULE counts and says which half to believe. It must never present a
-total as a vendor number, and never let the encoder-to-core ratio pass unqualified -- that ratio
-is 13.8x by Vivado and 6.5x here, and understating it would undercut the finding this project
-exists to publicise.
-
-WHY NOT AN AREA MODEL: roadmap Q7. The study built one and it filtered zero configurations
-across two completed studies. This shells out to a real synthesis tool, or it reports nothing.
+No area model: one was built before and filtered zero configurations across two studies.
 """
 
 import os
@@ -206,17 +197,12 @@ def _run(yosys, outdir, module, timeout):
     if missing:
         return ModuleArea(module, status='MISSING', detail=', '.join(missing))
 
-    # `flatten` is LOAD-BEARING, not tidiness. Without it, every lut_node stays its own module
-    # and `abc -lut 6` maps only the top level, so the count is a fragment that looks plausible.
-    # It is an EXPLICIT PASS rather than `synth -flatten`, which is both more portable across
-    # yosys versions and measurably better here: explicit flatten reports 110 LUTs for JSC's
-    # core against Vivado's 110, where `synth -flatten` gave 106.
+    # ⚠️ `flatten` is load-bearing: without it abc maps only the top level and the count is a
+    # plausible-looking fragment. Explicit, not `synth -flatten`, which measured 106 where this
+    # gets Vivado's 110 exactly.
     #
-    # The numbers come from `select -count`, NOT from scraping `stat`. `stat` prints one section
-    # per surviving module -- including leftovers that still hold pre-mapping gate cells -- so
-    # reading a figure out of it depends on picking the right section, and picking the wrong one
-    # is silent. `select` operates on the whole design after opt_clean and answers exactly one
-    # question at a time.
+    # Counts come from `select -count`, not from scraping `stat` -- stat prints one section per
+    # surviving module, so reading a number out means picking the right one, silently.
     gates = ' '.join(f't:{g}' for g in _GATES)
     script = (f'read_verilog {" ".join(sources)}; '
               f'hierarchy -top {module}; '
@@ -244,12 +230,9 @@ def _run(yosys, outdir, module, timeout):
                                  f'yosys {yosys.version or "(unknown)"}')
     luts, flops, unmapped = (int(n) for n in counts[-3:])
 
-    # ⚠️ THE CHECK THAT MAKES THE NUMBER MEAN SOMETHING. Generic gate primitives surviving
-    # `abc -lut 6` mean the mapping did not cover the design, so the LUT count is a fragment.
-    #
-    # This is not hypothetical: yosys 0.33 (Ubuntu's package) reported ONE LUT for a 21-node
-    # core, and the previous implementation accepted it as a successful measurement. A wrong
-    # number presented as a result is worse than an error, because nothing downstream can tell.
+    # ⚠️ The check that makes the number mean anything: surviving gate primitives mean the
+    # mapping missed part of the design. yosys 0.33 reported ONE LUT for a 21-node core, and the
+    # old code called that a measurement.
     if unmapped:
         return ModuleArea(module, luts=luts, flops=flops, status='ERROR',
                           detail=f'{unmapped} unmapped gate cells remain after `abc -lut 6` on '

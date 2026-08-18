@@ -1,19 +1,12 @@
 """The `dwn2rtl` terminal command.
 
-A thin argument parser over the library. Every subcommand should be "collect arguments, call one
-function, print its report" -- logic accumulating here means the CLI and `import dwn2rtl` have
-stopped being the same thing.
+A thin parser over the library: collect arguments, call one function, print its report. Logic
+accumulating here means the CLI and `import dwn2rtl` have stopped being the same thing.
 
-DERIVE, DO NOT ASK. Almost everything a build needs is already in the checkpoint: features,
-classes, layers, n, z, wiring, table contents, and the integer width. A tool that makes a user
-restate what it could have read is a wrapper, not a tool.
+Everything a build needs is already in the checkpoint except one thing -- and it is not
+fractional bits, which no user can answer. It is `--input-bits`, the precision of their input.
 
-Exactly one thing cannot be derived, and it is not the expected one. Not fractional bits -- no
-user can answer that. It is `--input-bits`, the precision of their INPUT, which is a fact they
-possess (8-bit pixels, a 12-bit ADC). See precision.py.
-
-⚠️ STDOUT MUST BE ASCII. Windows consoles default to cp1252 and raise UnicodeEncodeError on an
-emoji in print(), turning a successful build into a traceback. Comments may use anything.
+⚠️ stdout must be ASCII: Windows consoles raise on an emoji in print().
 """
 
 import argparse

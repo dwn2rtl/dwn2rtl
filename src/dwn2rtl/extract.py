@@ -1,20 +1,10 @@
 """Checkpoint -> LUT tables, wiring, thresholds. Also the golden model.
 
-Two jobs in one file, on purpose:
+⚠️ Both jobs live here on purpose: `forward()` is checked against the RTL, and building it from
+the same tables the RTL was emitted from is what stops the two drifting.
 
-1. Turn a checkpoint into what hardware needs -- per-node truth tables, per-node input wiring,
-   and the thermometer thresholds those inputs come from.
-2. Run a pure-numpy forward pass over exactly those artifacts. `forward()` is the golden model
-   every emitted testbench is checked against.
-
-⚠️ Keeping them together is the guarantee: the model the RTL is compared against is built from
-the same tables the RTL was emitted from, so the comparison cannot drift. Split, a golden model
-could agree with PyTorch while the emitted design disagrees with both.
-
-Every structural fact relied on here -- LSB-first address order, `argmax(dim=0)` for learnable
-wiring, `> 0` table thresholding, contiguous GroupSum groups -- is written up in
-`docs/checkpoint-format.md`. Read correctly is not the same as implemented correctly, which is
-why the gate is a simulator and not a review.
+The structural facts it relies on -- LSB-first addresses, argmax(dim=0) wiring, `> 0`
+thresholding, contiguous GroupSum groups -- are in docs/checkpoint-format.md.
 """
 
 import re
@@ -99,41 +89,21 @@ def forward(x_bits, layers, num_classes):
     return group_sum_argmax(x_bits, num_classes)
 
 
-# ---------------------------------------------------------------------------
-# Fixed-point front end (the thermometer encoder)
+# Fixed-point front end. The golden model quantizes exactly as the hardware does, so the gate
+# stays bit-exact.
 #
-# Quantization is part of the SPECIFICATION, not an error to be minimised away. The golden
-# model quantizes exactly as the hardware does, so Gate 1 stays bit-exact; the difference
-# between this and the float32 model is then a characterization result to report rather than
-# a discrepancy to hide. The format is chosen by measurement, never by convention.
-#
-# THERE ARE NO MODULE-LEVEL FRAC_BITS/WORD_BITS, and adding some would be a regression. The
-# study had them, set to 16 and 12 -- one dataset's format -- and every consumer that
-# imported them inherited that precision as a default it never stated. The second dataset
-# needed Q0.8, so each of those sites was a silent wrong answer waiting to happen; six were
-# found one crash at a time before the constants were removed.
-#
-# The parameters below are therefore REQUIRED, not defaulted. A caller that does not know the
-# word width does not know enough to quantize, and should ask `precision.py`. Making them
-# required is the point: a missing argument is a TypeError at the call site, whereas a default
-# is a plausible wrong number that reaches the FPGA.
-# ---------------------------------------------------------------------------
+# ⚠️ frac_bits/word_bits are REQUIRED arguments, never module-level defaults. One dataset's
+# format as a default silently reached every caller that imported it, and six wrong answers
+# were found one crash at a time. A missing argument is a TypeError; a default is a plausible
+# wrong number that reaches the FPGA.
 
 
 def quantize(x, frac_bits, word_bits):
     """Real features -> fixed point. Truncation, not rounding: free in hardware.
 
-    SATURATES to the word range. That is usually lossless rather than a compromise, but it is
-    a claim to check, not assume -- call saturation_is_lossless().
-
-    Why it is normally fine: clamping changes no encoder bit as long as every threshold lies
-    strictly inside the representable range, since a saturated feature is still on the same
-    side of every threshold it was before. In the study's JSC model the word represented
-    [-8, +8) while the extreme thresholds were -4.55 and +4.34, so features out at 8.08 -- and
-    they existed, in a handful of 166,000 samples -- encoded identically to 7.9998.
-
-    Note that widening the FRACTIONAL part is not a fix for a range problem: more fractional
-    bits at the same integer width buy precision, not headroom. See precision.py.
+    Saturates to the word range, which is lossless as long as every threshold sits strictly
+    inside it -- check with saturation_is_lossless() rather than assuming. More fractional bits
+    do not fix a range problem; they buy precision, not headroom.
     """
     lo, hi = -(2 ** (word_bits - 1)), 2 ** (word_bits - 1) - 1
     q = np.floor(np.asarray(x, dtype=np.float64) * (2 ** frac_bits))
