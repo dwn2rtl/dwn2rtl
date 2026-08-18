@@ -149,9 +149,13 @@ Nothing is unfinished. What remains is optional and unchanged from phase 4's lis
 
 - **`--data`** (unit 8 tier 2) — still deferred, still for the right reason: it cannot be tested
   without a checkpoint whose thresholds are off-grid while its data is quantised.
-- **Verilator** as a second simulator backend, behind the existing interface. Now slightly more
-  valuable than before: a second simulator is the only way to know the gate is not passing on an
-  iverilog quirk.
+- ~~**Verilator** as a second simulator backend, behind the existing interface. Now slightly
+  more valuable than before: a second simulator is the only way to know the gate is not passing
+  on an iverilog quirk.~~ ⚠️ **Struck by phase 6.** The reasoning was right and the conclusion
+  was wrong: that assurance did not need a backend. Phase 6 probed Verilator, found it runs the
+  emitted testbenches unmodified, and put the cross-check in CI instead — two simulators now
+  agree on every vector without `verify.py` changing at all. The backend is declined, with its
+  trigger conditions in `phase6-ledger.md` §8.
 - **Real users.** The tool is installable by strangers for the first time, which is the one thing
   no amount of internal work could produce.
 

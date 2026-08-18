@@ -232,6 +232,7 @@ reasoning, and writing only the ledger makes anyone catching up read a diary.
 | **3** | **make it usable by someone else** — README, a worked example, the LICENCE, the upstream pin, and cleaning study-repo citations out of the shipped `rtl/*.v` | ✅ closed |
 | **4** | **measure, then optimize** — `estimate` via yosys, then changes justified by measurement | ✅ closed |
 | **5** | **publish it** — a GitHub org, packaging metadata, a Trusted Publishing workflow, a TestPyPI rehearsal, and `0.1.0` on PyPI | ✅ closed |
+| **6** | **make it legible, and get a second opinion** — a user guide, comments cut to the traps, and Verilator in CI as a linter and a second simulator | ✅ closed |
 
 **Phase 1 is the milestone.** Everything before it is scaffolding and everything after is
 packaging: a trained DWN goes in and a simulator certifies the Verilog bit-exact against the
