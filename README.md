@@ -265,6 +265,7 @@ on every commit.
 
 | | |
 |---|---|
+| [`docs/user-guide.md`](https://github.com/dwn2rtl/dwn2rtl/blob/main/docs/user-guide.md) | using it on your own model: saving, integrating the RTL, troubleshooting |
 | [`docs/overview.md`](https://github.com/dwn2rtl/dwn2rtl/blob/main/docs/overview.md) | what the tool is, how it installs, the build plan |
 | [`docs/checkpoint-format.md`](https://github.com/dwn2rtl/dwn2rtl/blob/main/docs/checkpoint-format.md) | what the exporter reads, and why |
 | [`docs/tool-roadmap.md`](https://github.com/dwn2rtl/dwn2rtl/blob/main/docs/tool-roadmap.md) | the audited work list and the decisions behind it |
