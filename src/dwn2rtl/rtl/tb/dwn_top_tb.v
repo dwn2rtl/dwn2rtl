@@ -2,7 +2,7 @@
 //
 // The companion to dwn_core_tb. Together they are the one non-negotiable rule:
 // emitted RTL is not correct until a simulator says it matches the golden model on every
-// vector. An emitter's own read-back is not that check -- the study repo has a case where one
+// vector. An emitter's own read-back is not that check -- we have a recorded case where one
 // reported 20/20 correct while the design was wrong on 958 of 1,504 vectors.
 //
 // WHY TWO TESTBENCHES RATHER THAN ONE. dwn_core_tb drives PRE-BINARIZED bits, so it tests the
@@ -28,7 +28,7 @@
 //
 // LATENCY comes from dwn_top_params.vh, written by the same build that emitted the pipeline.
 // Hardcoding it here is how a depth change silently becomes an off-by-one comparison against
-// the wrong vector. IDX_W likewise: the study repo's testbench hardcoded 3, which left the
+// the wrong vector. IDX_W likewise: an earlier testbench of ours hardcoded 3, which left the
 // upper bits undriven below five classes and TRUNCATED the comparison above eight -- a 10-class
 // design was checked on three of its four index bits, and passed.
 

@@ -9,7 +9,7 @@
 //
 // Note the paper replaces this with a "Learnable Reduction" pyramid for tiny models, on the
 // grounds that the popcount circuit can be as large as the network itself. dwn2rtl emits the
-// plain popcount only: 35 trained configurations in the dwn-fpga-study repository found a
+// plain popcount only: across 35 trained configurations we found that a
 // learned taper genuinely works and is dominated anyway -- a plain 500-node layer beat the
 // best taper while using the identical adder tree that taper spent 2,800 nodes to reach.
 

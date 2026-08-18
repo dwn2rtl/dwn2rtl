@@ -33,7 +33,7 @@ module lut_node #(
 
     // The learned parameters ARE the table. A synthesis tool must map this to a single LUT6
     // rather than inferring distributed RAM; it is worth checking that it did, because the
-    // area claim for a DWN depends on it. Measured on Vivado in the dwn-fpga-study repository.
+    // area claim for a DWN depends on it. Confirmed on Vivado.
     assign out = TABLE[addr];
 
 endmodule
