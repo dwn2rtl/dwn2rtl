@@ -1,0 +1,164 @@
+# Publishing, to TestPyPI or PyPI, with no stored secret anywhere.
+#
+# TRUSTED PUBLISHING. The index is told which repository and which workflow may upload, and
+# GitHub mints a short-lived OIDC token for that one run. There is no API token to leak, rotate,
+# or accidentally print -- which matters more here than usual, because a leaked PyPI token lets
+# someone ship arbitrary code to everyone who types `pip install dwn2rtl`.
+#
+# ⚠️ MANUAL TRIGGER ONLY, and deliberately not on tag push. A version on PyPI is IMMUTABLE: it
+# can be yanked but never replaced or re-uploaded. An automatic publish on every tag makes an
+# irreversible act a side effect of a typo, so the release is something a person chooses.
+#
+# ⚠️ NOTHING PUBLISHES UNVERIFIED. `publish` needs `gate` and `verify`, so the artifact that
+# reaches an index has had the suite run against it AND been installed from the built wheel,
+# with no source tree present, and driven through a simulator. That is CLAUDE.md's rule applied
+# to a release: emitted RTL is not correct until a simulator says so, and a wheel nobody
+# installed is not a wheel that works.
+
+name: Publish
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: 'Which index to publish to'
+        required: true
+        type: choice
+        options:
+          - testpypi
+          - pypi
+        default: testpypi
+
+# Nothing needs write access by default; the publish job opts into id-token below.
+permissions: {}
+
+jobs:
+  build:
+    name: build sdist and wheel
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - run: pip install build twine
+      - run: python -m build
+
+      # --strict makes a README that PyPI cannot render an ERROR rather than a warning. The
+      # project page IS the README, so a rendering failure ships a blank page to every visitor.
+      - name: twine check
+        run: twine check --strict dist/*
+
+      - run: ls -l dist/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error
+
+  gate:
+    name: the full suite, on the commit being released
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # Same mirror override as ci.yml -- the runner's apt-mirrors.txt leads with an azure
+      # mirror that has been unreachable, and every index item pays a retry cycle against it.
+      - name: Install iverilog
+        timeout-minutes: 15
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          if [ -f /etc/apt/apt-mirrors.txt ]; then
+            echo 'https://archive.ubuntu.com/ubuntu/' | sudo tee /etc/apt/apt-mirrors.txt
+          fi
+          sudo apt-get update -o Acquire::http::Timeout=15 -o Acquire::https::Timeout=15
+          sudo apt-get install -y -o DPkg::Lock::Timeout=600 iverilog
+
+      - run: pip install -e ".[dev]"
+      - run: pytest -q
+
+  verify:
+    name: the built wheel works with no source tree
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      # Checked out for tests/fixtures.py only -- the package itself comes from the wheel.
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
+
+      - name: Install iverilog
+        timeout-minutes: 15
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          if [ -f /etc/apt/apt-mirrors.txt ]; then
+            echo 'https://archive.ubuntu.com/ubuntu/' | sudo tee /etc/apt/apt-mirrors.txt
+          fi
+          sudo apt-get update -o Acquire::http::Timeout=15 -o Acquire::https::Timeout=15
+          sudo apt-get install -y -o DPkg::Lock::Timeout=600 iverilog
+
+      # ⚠️ THE WHEEL, not the source tree. `pip install -e` leaves the repo in place, so
+      # files('dwn2rtl')/'rtl' resolves back into it and a completely missing package-data
+      # block looks perfectly healthy (docs/phase0-ledger.md §4).
+      - name: Install the wheel
+        run: |
+          mkdir -p /tmp/elsewhere
+          pip install dist/*.whl
+
+      - name: Build and verify from the installed wheel alone
+        working-directory: /tmp/elsewhere
+        run: |
+          python - <<'PY'
+          from importlib.resources import files
+          rtl = files('dwn2rtl') / 'rtl'
+          need = ['lut_node.v', 'popcount.v', 'argmax.v', 'pipe_reg.v']
+          missing = [n for n in need if not (rtl / n).is_file()]
+          assert not missing, f'the wheel is missing {missing}'
+          for tb in ['dwn_core_tb.v', 'dwn_top_tb.v']:
+              assert (rtl / 'tb' / tb).read_text().strip(), f'{tb} is empty in the wheel'
+          print('wheel carries', len(need) + 2, 'Verilog files')
+          PY
+          python -c "import sys; sys.path.insert(0, '$GITHUB_WORKSPACE/tests'); import fixtures, dwn2rtl; m,t = fixtures.make_live('tiny'); dwn2rtl.save(m,t,'m.dwn')"
+          dwn2rtl build m.dwn --out rtl --input-bits 8
+          dwn2rtl verify rtl
+
+  publish:
+    name: publish to ${{ inputs.target }}
+    needs: [build, gate, verify]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    # The environment name is half of the Trusted Publisher's identity -- the index checks it
+    # alongside the repository and workflow filename. It must match the pending publisher
+    # configured on the index, and the GitHub environment must exist in repo settings.
+    environment: ${{ inputs.target }}
+
+    permissions:
+      id-token: write        # mint the OIDC token. This is the whole authentication story.
+
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
+
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: ${{ inputs.target == 'testpypi' && 'https://test.pypi.org/legacy/' || 'https://upload.pypi.org/legacy/' }}
+          print-hash: true
