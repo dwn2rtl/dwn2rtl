@@ -276,3 +276,16 @@ def test_buildconfig_has_no_default_precision():
     which is the defect that cost the study repo six separate crashes."""
     with pytest.raises(TypeError):
         BuildConfig(outdir='x')
+
+
+def test_an_absurd_input_width_is_refused_not_an_overflow():
+    """--input-bits 999 reached numpy as "OverflowError: int too big to convert" from inside the
+    golden model. Quantised values are int64, so the word has a real ceiling."""
+    import pytest
+    from dwn2rtl.precision import MAX_WORD_BITS, Precision
+
+    with pytest.raises(ValueError, match=str(MAX_WORD_BITS)):
+        Precision(word_bits=MAX_WORD_BITS + 1, frac_bits=8, source='given')
+
+    # The boundary itself must still be allowed.
+    assert Precision(word_bits=MAX_WORD_BITS, frac_bits=8, source='given').word_bits == MAX_WORD_BITS

@@ -26,7 +26,7 @@ Python 3.10+, on Linux, macOS and Windows. Pulls in numpy and torch.
 | command | needs |
 |---|---|
 | `dwn2rtl build` | nothing but Python |
-| `dwn2rtl verify` | any Verilog simulator — `winget install Icarus.Verilog` (Windows), `apt install iverilog` (Debian/Ubuntu), `brew install icarus-verilog` (macOS) |
+| `dwn2rtl verify` | a Verilog simulator — `winget install Icarus.Verilog` (Windows), `apt install iverilog` (Debian/Ubuntu), `brew install icarus-verilog` (macOS). [Verilator](https://verilator.org) also works on Linux and macOS: `dwn2rtl verify rtl/ --simulator verilator` |
 | `dwn2rtl estimate` | [yosys](https://github.com/YosysHQ/yosys), and it is optional |
 
 No vendor toolchain appears in that list. Nothing here needs Vivado, Quartus or a licence —

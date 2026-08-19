@@ -340,6 +340,17 @@ def test_a_missing_file_still_raises_filenotfound(tmp_path):
         load(str(tmp_path / 'nope.pt'))
 
 
+def test_non_positive_config_values_are_refused(tmp_path):
+    """num_classes=0 reached `width % num_classes` and surfaced as ZeroDivisionError from inside
+    the golden model, which says nothing about the user's checkpoint."""
+    import fixtures
+    for key in ('n', 'num_classes', 'thermometer_bits'):
+        ck = fixtures.make_checkpoint()
+        ck['config'] = dict(ck['config'], **{key: 0})
+        with pytest.raises(CheckpointError, match='positive integer'):
+            normalize(ck)
+
+
 def test_checkpoint_error_is_a_valueerror_not_a_systemexit():
     """A library that kills its caller's process from inside a function they merely imported is
     not usable from a notebook."""

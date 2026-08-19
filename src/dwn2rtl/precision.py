@@ -28,6 +28,9 @@ def required_int_bits(thresholds):
 # on-grid measures ~7.6e-06, off-grid ~5e-01, so anything from 1e-4 to 1e-2 behaves the same.
 GRID_TOLERANCE = 1e-3
 
+# The widest signed word the golden model can hold, since it quantises to int64.
+MAX_WORD_BITS = 64
+
 # Below this many distinct thresholds a grid match is coincidence, not evidence.
 MIN_DISTINCT_FOR_INFERENCE = 8
 
@@ -79,6 +82,13 @@ class Precision:
             raise ValueError(
                 f'a {self.word_bits}-bit signed word cannot hold {self.frac_bits} fractional '
                 f'bits plus a sign bit')
+        # ⚠️ Quantised values are int64 and the hex writer emits word_bits-wide words, so a wider
+        # word has nowhere to live. Unbounded, --input-bits 999 reached numpy as
+        # "OverflowError: int too big to convert" from inside the golden model.
+        if self.word_bits > MAX_WORD_BITS:
+            raise ValueError(
+                f'a {self.word_bits}-bit word exceeds the {MAX_WORD_BITS}-bit limit '
+                f'(frac_bits={self.frac_bits}). Quantised values are stored as int64.')
 
     @property
     def int_bits(self):

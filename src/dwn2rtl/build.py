@@ -153,6 +153,10 @@ def build(checkpoint, outdir, input_bits=None, pipeline=None, n_random=None, see
     thresholds = ck['thermometer']['thresholds'].numpy()
     precision = precision_for(thresholds, input_bits=input_bits)
 
+    # A path that is already a FILE reached the user as a raw FileExistsError/WinError from
+    # os.makedirs, which names the syscall rather than the mistake.
+    if os.path.exists(outdir) and not os.path.isdir(outdir):
+        raise NotADirectoryError(f'--out {outdir} is a file, not a directory')
     os.makedirs(outdir, exist_ok=True)
 
     # 1. the core. Also emits dwn_core_params.vh, which step 2 reads.

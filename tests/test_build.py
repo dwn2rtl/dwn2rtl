@@ -360,3 +360,13 @@ def test_gate_reports_a_real_failure(tmp_path):
 
     stdout = run_gate(r.outdir, os.path.join('tb', 'dwn_core_tb.v'))
     assert 'FAIL' in stdout, f'a corrupted design still passed:\n{stdout}'
+
+
+def test_out_pointing_at_a_file_is_refused_not_an_oserror(tmp_path):
+    """os.makedirs raised a raw FileExistsError/WinError, which names the syscall rather than
+    the mistake."""
+    target = tmp_path / 'notadir'
+    target.write_text('x', encoding='utf-8')
+
+    with pytest.raises(NotADirectoryError, match='is a file, not a directory'):
+        build(fixtures.make('tiny'), str(target), input_bits=8)

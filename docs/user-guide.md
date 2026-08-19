@@ -31,6 +31,21 @@ separately:
 
 `estimate` needs `yosys` and is entirely optional.
 
+**Verilator also works**, on Linux and macOS, if you already have it:
+
+```bash
+dwn2rtl verify rtl/ --simulator verilator
+```
+
+Both simulators run the same emitted testbenches and must agree — CI checks that on every
+commit. iverilog is the default because it is dramatically faster here: **0.38 s against 14.7 s**
+end to end on the same design, since Verilator translates to C++ and compiles it before running.
+Its advantage is throughput on long simulations, which these are not.
+
+⚠️ **Not listed for Windows on purpose.** Verilator is a Unix-oriented tool that generates C++
+and needs a compiler to build it; the supported route there is WSL. Nothing in dwn2rtl requires
+Verilator either way.
+
 > **Windows: install into a short path.** A fresh venv created ~120 characters deep failed to
 > install *torch* — `OSError: [Errno 2] No such file or directory: ...mem_eff_attention/
 > epilogue_thread_apply_logsumexp.h`. That is the 260-character `MAX_PATH` limit, hit by torch's

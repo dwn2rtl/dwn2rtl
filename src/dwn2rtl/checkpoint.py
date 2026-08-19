@@ -206,6 +206,13 @@ def _validate(ck):
     n, K, z = cfg['n'], cfg['num_classes'], cfg['thermometer_bits']
     thr = ck['thermometer']['thresholds']
 
+    # ⚠️ Positive-integer check BEFORE anything divides by these. num_classes=0 reached
+    # `width % num_classes` and surfaced as ZeroDivisionError from inside the golden model,
+    # which tells a user nothing about their checkpoint.
+    for name, v in (('n', n), ('num_classes', K), ('thermometer_bits', z)):
+        if not isinstance(v, int) or isinstance(v, bool) or v < 1:
+            raise CheckpointError(f'config {name}={v!r} must be a positive integer')
+
     # Orientation. Our convention is (features, z) -- emit_encoder reads shape[0] as the feature
     # count. A transposed matrix has the right rank, the right dtype and plausible values, and
     # would silently emit an encoder with features and thresholds swapped. Cheap to detect

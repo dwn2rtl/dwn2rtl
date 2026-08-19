@@ -23,12 +23,11 @@ def cmd_build(args):
 
     try:
         report = build(args.checkpoint, args.out, input_bits=args.input_bits)
-    except CheckpointError as e:
+    except (CheckpointError, FileNotFoundError, NotADirectoryError, IsADirectoryError,
+            ValueError) as e:
         # These messages are the contract -- they name the missing object and show the fix.
-        # Wrapping them in a traceback buries the part the user needs.
-        print(f'dwn2rtl build: {e}', file=sys.stderr)
-        return 1
-    except FileNotFoundError as e:
+        # Wrapping them in a traceback buries the part the user needs. ValueError covers the
+        # precision guards, which are ordinary bad input rather than a broken checkpoint.
         print(f'dwn2rtl build: {e}', file=sys.stderr)
         return 1
 
@@ -43,7 +42,7 @@ def cmd_verify(args):
     from .verify import SimulatorNotFound, verify
 
     try:
-        report = verify(args.dir, iverilog=args.simulator)
+        report = verify(args.dir, simulator=args.simulator)
     except (FileNotFoundError, SimulatorNotFound) as e:
         print(f'dwn2rtl verify: {e}', file=sys.stderr)
         return 1
@@ -94,7 +93,8 @@ def build_parser():
     v = sub.add_parser('verify', help='compile and run the emitted testbenches')
     v.add_argument('dir', help='a directory produced by `dwn2rtl build`')
     v.add_argument('--simulator', metavar='EXE',
-                   help='path to iverilog, if it is not on PATH and not in a usual place')
+                   help="'verilator', or a path to a simulator that is not on PATH. Default: "
+                        'iverilog, which is much faster here -- verilator compiles to C++ first')
     v.set_defaults(func=cmd_verify)
 
     e = sub.add_parser('estimate', help='resource estimate via yosys, if it is installed')
