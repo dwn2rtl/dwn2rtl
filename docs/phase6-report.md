@@ -45,7 +45,7 @@ gained real errors.
 | a pipeline depth that means what it says | `pipe_reg` inserted one register for any count |
 | **a second implementation of the golden model** | the one failure the gate cannot detect |
 | macOS and the dependency floors in CI | both were supported in name only |
-| mutation testing | 6 holes that eight rounds of auditing had missed |
+| mutation testing | 6 holes that eight rounds of auditing had missed; the RTL scores 11/11 |
 
 ## 3. Findings that outlive this phase
 

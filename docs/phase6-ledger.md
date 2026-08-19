@@ -725,7 +725,37 @@ machine without it. Two things follow:
    design which is correct by simulation and wrong by construction -- the same category as the
    pragma bug it found on its first day.
 
-## 28. What survived the audit
+## 28. Measured — the shipped Verilog, mutated
+
+The emitters and the golden model had been swept; the four hand-written primitives had only ever
+had four operators flipped by hand. Twelve mutants, each a real build + iverilog gate + a
+Verilator lint:
+
+| | |
+|---|---|
+| killed by the gate | 8 |
+| killed by gate and lint together | 1 |
+| killed by the pipeline-depth tests | 3 |
+| survived, correctly | 1 -- summing bits in reverse gives the same count |
+
+**11 of 11 non-equivalent mutants died**, including a wrong tree root, a carried-forward wrong
+entry, an off-by-one LUT address, a dropped popcount bit and a swallowed pipeline input.
+
+⚠️ **And the harness lied to me a third time.** Three `pipe_reg` mutants -- one stage short,
+tapping the wrong stage, and `STAGES=0` no longer bypassing -- reported as surviving. All three
+are invisible at `STAGES=1`, and the harness built with the DEFAULT pipeline only. Re-run against
+the depth tests from §18, every one dies.
+
+That is the same lesson as §26 and §27, and it is now the most repeated finding of the whole
+audit: **a mutation score measures the tests you happened to run, not the tests that exist.**
+Every sweep in this phase produced false survivors from its own narrow selection -- 11 the first
+time, 3 the second, 3 here -- and each time the fix was to re-run against the full suite rather
+than to change the code.
+
+It also, incidentally, confirms the pipeline-depth tests are doing real work: they are the only
+thing standing between a wrong `pipe_reg` and a green run.
+
+## 29. What survived the audit
 
 Worth recording, because it is the larger half:
 
