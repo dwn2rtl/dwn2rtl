@@ -639,3 +639,29 @@ def test_no_random_vectors_is_allowed_and_still_emits_the_edge_cases(tmp_path):
 
     with pytest.raises(ValueError, match='n_random must be >= 0'):
         build(fixtures.make('tiny'), str(tmp_path / 'neg'), input_bits=8, n_random=-1)
+
+
+def test_every_generated_file_says_which_version_wrote_it(tmp_path):
+    """⚠️ The hand-written primitives are copied VERBATIM and carry no version, so a user who
+    updates the generated files without them gets a parameter mismatch whose only symptom is
+    "Parameter not found" -- exactly what the ENABLE -> STAGES rename in 0.2.0 can produce.
+
+    Stamping the generated half makes that diagnosable, and answers the first question of any
+    bug report. The .hex files are deliberately excluded: $readmemh parses values, not comments.
+    """
+    import dwn2rtl
+
+    outdir = build(fixtures.make('tiny'), str(tmp_path / 'rtl'), input_bits=8).outdir
+
+    stamped = [f for f in sorted(os.listdir(outdir)) if f.endswith(('.v', '.vh'))]
+    generated = [f for f in stamped if f not in PRIMITIVES]
+    assert generated, 'no generated files found'
+
+    for name in generated:
+        first = open(os.path.join(outdir, name), encoding='utf-8').readline()
+        assert dwn2rtl.__version__ in first, f'{name} does not say which version wrote it'
+
+    for name in os.listdir(outdir):
+        if name.endswith('.hex'):
+            head = open(os.path.join(outdir, name), encoding='utf-8').readline()
+            assert '//' not in head, f'{name} must stay parseable by $readmemh'
