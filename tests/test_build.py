@@ -462,3 +462,47 @@ def test_public_arguments_name_the_argument_not_an_internal(tmp_path):
 
     # and the valid forms still work
     assert build(ck, str(tmp_path / 'd'), input_bits=8, pipeline=Pipeline(enc=0)).outdir
+
+
+@pytest.mark.sim
+@pytest.mark.parametrize('depths', [
+    (0, 0, 0, 0),      # fully combinational -- LATENCY 0, which the testbench mis-sampled
+    (1, 0, 0, 0),      # register the encoder only: a plausible low-latency build
+    (0, 1, 0, 0),
+    (1, 2, 1, 1),      # ⚠️ lut=2: pipe_reg inserted ONE register for any non-zero count
+    (2, 3, 2, 2),
+    (8, 8, 8, 8),
+])
+def test_the_gate_passes_at_every_pipeline_depth(depths, tmp_path):
+    """⚠️ Only the default (1,1,1,1) was ever gated. `pipe_reg` treated its parameter as a FLAG
+    while `Pipeline` documented a stage COUNT and latency() summed counts, so any depth above 1
+    claimed a latency the hardware did not have. And at zero latency the testbench compared
+    before driving, so a combinational design was checked one step early.
+    """
+    from dwn2rtl import Pipeline
+    from dwn2rtl.verify import verify
+
+    enc, lut, pop, out = depths
+    r = build(fixtures.make('tiny'), str(tmp_path / 'rtl'), input_bits=8,
+              pipeline=Pipeline(enc=enc, lut=lut, pop=pop, out=out))
+    report = verify(r.outdir)
+    assert report.ok, f'depths={depths}\n' + '\n'.join(report.lines())
+
+
+@pytest.mark.sim
+def test_the_testbench_is_still_sensitive_to_latency(tmp_path):
+    """⚠️ The guard on the fix above. Driving before comparing must not make the comparison
+    latency-blind -- a testbench that passes whatever the pipeline does is worse than none."""
+    import re
+
+    from dwn2rtl.verify import verify
+
+    outdir = build(fixtures.make('tiny'), str(tmp_path / 'rtl'), input_bits=8).outdir
+    path = os.path.join(outdir, 'dwn_core_params.vh')
+    src = open(path).read()
+    real = int(re.search(r'DWN_CORE_LATENCY (\d+)', src).group(1))
+
+    for claimed in (real - 1, real + 1):
+        open(path, 'w').write(re.sub(r'(DWN_CORE_LATENCY )\d+', rf'\g<1>{claimed}', src))
+        assert not verify(outdir, levels=('core',)).ok, \
+            f'a design claiming latency {claimed} instead of {real} was reported as correct'

@@ -164,7 +164,7 @@ def emit(ck, out_path, pipe_lut=PIPE_LUT, pipe_pop=PIPE_POP, pipe_out=PIPE_OUT):
             L.append(f'        u_l{li}_n{j} (.addr({{{slots}}}), .out(layer{li}[{j}]));')
         L.append('')
         L.append(f'    wire [{count-1}:0] layer{li}_q;')
-        L.append(f'    pipe_reg #(.WIDTH({count}), .ENABLE(PIPE_LUT)) u_pipe_l{li} '
+        L.append(f'    pipe_reg #(.WIDTH({count}), .STAGES(PIPE_LUT)) u_pipe_l{li} '
                  f'(.clk(clk), .d(layer{li}), .q(layer{li}_q));')
         L.append('')
         prev = f'layer{li}_q'
@@ -177,14 +177,14 @@ def emit(ck, out_path, pipe_lut=PIPE_LUT, pipe_pop=PIPE_POP, pipe_out=PIPE_OUT):
                  f'(.bits({prev}[{hi}:{lo}]), .count(scores[{c*score_w+score_w-1}:{c*score_w}]));')
     L.append('')
     L.append(f'    wire [{num_classes*score_w-1}:0] scores_q;')
-    L.append(f'    pipe_reg #(.WIDTH({num_classes*score_w}), .ENABLE(PIPE_POP)) u_pipe_pop '
+    L.append(f'    pipe_reg #(.WIDTH({num_classes*score_w}), .STAGES(PIPE_POP)) u_pipe_pop '
              f'(.clk(clk), .d(scores), .q(scores_q));')
     L.append('')
     L.append(f'    wire [{idx_w-1}:0] idx;')
     L.append(f'    argmax #(.K({num_classes}), .W({score_w})) u_argmax '
              f'(.scores_flat(scores_q), .index(idx));')
     L.append('')
-    L.append(f'    pipe_reg #(.WIDTH({idx_w}), .ENABLE(PIPE_OUT)) u_pipe_out '
+    L.append(f'    pipe_reg #(.WIDTH({idx_w}), .STAGES(PIPE_OUT)) u_pipe_out '
              f'(.clk(clk), .d(idx), .q(class_idx));')
     L.append('')
     L.append('endmodule')

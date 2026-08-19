@@ -417,7 +417,60 @@ directory reached the user as a traceback. All three subcommands now catch `OSEr
 
 The pattern is worth naming: **enumerating subclasses is a bet that you thought of all of them.**
 
-## 18. What survived the audit
+## 18. 🎯 Found — the pipeline depth parameter did not do what it says, and only the default was ever gated
+
+Round five pointed at `Pipeline`, a documented public argument. **Every non-default depth failed
+the gate.** Two independent defects, both hidden by the same gap: the gate had only ever run
+against `Pipeline(1, 1, 1, 1)`.
+
+### `pipe_reg` treated a COUNT as a FLAG
+
+`config.Pipeline` says *"Each is a stage count"* and `latency()` sums them --
+`enc + lut * n_layers + pop + out`. The hardware said otherwise:
+
+```verilog
+if (ENABLE != 0) begin : g_reg   // ONE register, whatever the number
+```
+
+So `Pipeline(lut=2)` on a two-layer model claimed latency 6, the hardware delivered 4, and the
+testbench sampled two cycles late: **201 mismatches on a design that was fine.** Fixed by making
+`pipe_reg` a chain of `STAGES` registers -- and renamed from `ENABLE`, because a parameter named
+for a flag invites exactly this.
+
+### The testbench compared before it drove
+
+```verilog
+@(negedge clk);
+if (i >= LATENCY) compare against expected[i - LATENCY];
+x = vectors[i];                  // the input for i, applied AFTER the comparison
+```
+
+Correct for `LATENCY >= 1`, wrong at zero: a combinational design's answer for vector `i`
+depends on an input that had not been applied yet, so every comparison was one step early.
+⚠️ **`Pipeline(enc=1, lut=0, pop=0, out=0)` is a plausible build** -- register the encoder, leave
+a small core combinational -- and it produced `core FAIL` on a correct design. Same false-alarm
+class as the vector-packing bug, from the opposite direction.
+
+Now drives, settles (`#1`, well inside the half period), then compares -- correct at every
+latency including zero.
+
+### ⚠️ Changing a testbench needs its own proof
+
+These are the files everything else is checked against, so "the suite still passes" is not
+enough: a testbench that passes *unconditionally* would also pass. Verified separately that the
+comparison is still latency-sensitive by lying to it about the latency:
+
+| claimed | real | result |
+|---|---|---|
+| 4 | 4 | PASS |
+| 3 | 4 | **FAIL**, 192 mismatches |
+| 5 | 4 | **FAIL**, 192 mismatches |
+| 6 | 4 | **FAIL**, 201 mismatches |
+
+Both fixes are now gated at six depths including `(0,0,0,0)` and `(1,2,1,1)`, and the
+latency-sensitivity check is a test of its own.
+
+## 19. What survived the audit
 
 Worth recording, because it is the larger half:
 
@@ -429,6 +482,9 @@ Worth recording, because it is the larger half:
   design that passes the gate every time -- the second build does not inherit the first's mess.
 - **A file held open by a reader** does not stop a rebuild on Windows.
 - **`pathlib.Path`** works for the checkpoint and the output directory.
+- **Builds are deterministic** -- the same checkpoint and seed produce byte-identical output,
+  and so do two runs with no seed at all.
+- **Tiny and large models** -- a one-node one-class model, and 5,000 vectors, both pass.
 - **The report objects** stay ASCII, refuse to divide by a zero-LUT core, and an empty estimate
   is not ok -- `all([])` is True, and that trap is guarded in both commands now.
 - **Paths** -- spaces, unicode, relative, trailing separators all work; an over-long Windows path

@@ -47,6 +47,13 @@ module dwn_core_tb;
         // outputs on the same negedge, by which point the pipeline has settled.
         for (i = 0; i < N_VEC + LATENCY; i = i + 1) begin
             @(negedge clk);
+            // ⚠️ DRIVE FIRST, THEN COMPARE. This used to compare and then drive, which is
+            // correct only when LATENCY >= 1: at zero latency the design is combinational, so
+            // vector i's answer depends on an input that had not been applied yet and every
+            // comparison was one step early. `#1` lets combinational logic settle before the
+            // read; it is well inside the half period (the clock toggles every 5).
+            x = (i < N_VEC) ? vectors[i] : {VEC_W{1'b0}};
+            #1;
             if (i >= LATENCY) begin
                 j = i - LATENCY;
                 // !== not != : an x or z must count as a failure rather than propagating
@@ -59,7 +66,6 @@ module dwn_core_tb;
                                  j, class_idx, expected[j][`IDX_W-1:0]);
                 end
             end
-            x = (i < N_VEC) ? vectors[i] : {VEC_W{1'b0}};
         end
 
         $display("");

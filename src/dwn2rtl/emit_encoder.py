@@ -144,7 +144,7 @@ def emit_top(ck, out_path, total_bits, n_features, num_classes, core_latency,
     L.append('')
     L.append('    thermometer_encoder u_enc (.x_flat(x_flat), .bits(bits));')
     L.append('')
-    L.append(f'    pipe_reg #(.WIDTH({total_bits}), .ENABLE(PIPE_ENC)) u_pipe_enc')
+    L.append(f'    pipe_reg #(.WIDTH({total_bits}), .STAGES(PIPE_ENC)) u_pipe_enc')
     L.append('        (.clk(clk), .d(bits), .q(bits_q));')
     L.append('')
     L.append('    dwn_core #(.PIPE_LUT(PIPE_LUT), .PIPE_POP(PIPE_POP), .PIPE_OUT(PIPE_OUT))')

@@ -42,6 +42,7 @@ gained real errors.
 | **correct vectors at any width** | a byte-packing bug that made 12-bit vectors 16x too large |
 | an `odd_width` fixture | 18 bits, so the gate drives the off-byte path on every commit |
 | metadata that cannot break a design | a newline in `run_name` emitted uncompilable Verilog |
+| a pipeline depth that means what it says | `pipe_reg` inserted one register for any count |
 
 ## 3. Findings that outlive this phase
 
@@ -172,10 +173,10 @@ not need a backend, and is now had in CI. §6 is struck and points here.
 
 | | |
 |---|---|
-| commits | **30** |
-| tests | **301 passing**, 16 skipped |
+| commits | **31** |
+| tests | **308 passing**, 16 skipped |
 | wrong-input cases audited | **30**, of which **4** reached the user as a traceback |
-| defects found by the adversarial audit | **16**, one of them producing wrong output |
+| defects found by the adversarial audit | **18**, three of them producing a wrong result |
 | hostile inputs that behaved correctly | **60+** across the CLI, the reader and damaged output |
 | studied configurations that could have caught the vector bug | **0 of 77** |
 | decisions reversed by their own evidence | **2** -- the UNOPTFLAT fix, and the backend itself |
