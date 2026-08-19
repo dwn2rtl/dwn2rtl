@@ -390,7 +390,34 @@ fails rather than passing; `levels=()` returns **not ok**, because an empty run 
 and a partially-copied directory reports MISSING or refuses outright at every prefix length
 tried, never PASS.
 
-## 17. What survived the audit
+## 17. Found — `estimate` argued with the wrong thing, and the CLI missed a whole error family
+
+**`estimate`'s arguments were validated after the tool search**, so the error depended on what
+was installed: a caller without yosys got *"no working yosys found"* for what is really a typo,
+and a caller with yosys got a bare `KeyError`. Now checked first, which also makes them testable
+on a machine that has no yosys at all.
+
+| call | said | says now |
+|---|---|---|
+| `modules='dwn_core'` | iterated the characters -> `KeyError: 'd'` | "must be a sequence, not a string" |
+| `modules=['dwn_coree']` | bare `KeyError` | "unknown module(s); expected ..." |
+| `modules=[]` | ⚠️ silently measured **ALL** modules | measures nothing, needs no yosys, and is **not ok** |
+
+⚠️ The empty case is the interesting one. `list(modules or MODULES)` treats an empty list as
+"unset", so asking for nothing got you everything -- the opposite of what the caller wrote, and
+the opposite of `verify(levels=())`, which honours empty and reports not-ok. **Two commands
+disagreeing about what "nothing" means is worse than either answer.**
+
+### ⚠️ And the CLI was catching subclasses instead of the family
+
+`except (CheckpointError, FileNotFoundError, NotADirectoryError, IsADirectoryError, ValueError)`
+names two `OSError` subclasses. **`PermissionError` is a third**, and it is what you get from a
+file an editor left open or a copy left read-only -- so a read-only `dwn_core.v` in the output
+directory reached the user as a traceback. All three subcommands now catch `OSError` itself.
+
+The pattern is worth naming: **enumerating subclasses is a bet that you thought of all of them.**
+
+## 18. What survived the audit
 
 Worth recording, because it is the larger half:
 
@@ -398,6 +425,12 @@ Worth recording, because it is the larger half:
   expected answer, an emptied `.v`, a deleted `tb/`: all FAIL, ERROR or MISSING with detail.
 - **The emitter is robust across shapes** -- K=1, n=1, a single feature, z=1, five layers, 240
   nodes, every threshold identical, thresholds at 1e9: all bit-exact.
+- **Interrupted builds recover.** A build killed after 0, 4 or 9 files, then re-run, produces a
+  design that passes the gate every time -- the second build does not inherit the first's mess.
+- **A file held open by a reader** does not stop a rebuild on Windows.
+- **`pathlib.Path`** works for the checkpoint and the output directory.
+- **The report objects** stay ASCII, refuse to divide by a zero-LUT core, and an empty estimate
+  is not ok -- `all([])` is True, and that trap is guarded in both commands now.
 - **Paths** -- spaces, unicode, relative, trailing separators all work; an over-long Windows path
   is refused rather than half-written.
 - **The CLI** -- 17 hostile invocations (bad flags, missing arguments, wrong file types, an

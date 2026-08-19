@@ -172,10 +172,10 @@ not need a backend, and is now had in CI. §6 is struck and points here.
 
 | | |
 |---|---|
-| commits | **29** |
-| tests | **298 passing**, 16 skipped |
+| commits | **30** |
+| tests | **301 passing**, 16 skipped |
 | wrong-input cases audited | **30**, of which **4** reached the user as a traceback |
-| defects found by the adversarial audit | **12**, one of them producing wrong output |
+| defects found by the adversarial audit | **16**, one of them producing wrong output |
 | hostile inputs that behaved correctly | **60+** across the CLI, the reader and damaged output |
 | studied configurations that could have caught the vector bug | **0 of 77** |
 | decisions reversed by their own evidence | **2** -- the UNOPTFLAT fix, and the backend itself |

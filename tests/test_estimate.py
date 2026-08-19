@@ -215,3 +215,35 @@ def test_cli_estimate_of_a_non_build_exits_one(tmp_path, capsys):
     from dwn2rtl.cli import main
     assert main(['estimate', str(tmp_path)]) == 1
     assert 'dwn2rtl build' in capsys.readouterr().err
+
+
+def test_module_arguments_are_checked_before_yosys_is_looked_for():
+    """⚠️ Asserted WITHOUT yosys, and that is the point: until these ran first, a caller with no
+    yosys got "no working yosys found" for what is really a typo, and a caller with yosys got a
+    bare KeyError. The error a user sees must not depend on what is installed."""
+    import tempfile
+    import fixtures
+    from dwn2rtl.build import build
+
+    outdir = build(fixtures.make('tiny'),
+                   os.path.join(tempfile.mkdtemp(), 'rtl'), input_bits=8).outdir
+
+    with pytest.raises(TypeError, match='not a string'):
+        estimate(outdir, modules='dwn_core')
+    with pytest.raises(ValueError, match='unknown module'):
+        estimate(outdir, modules=['dwn_coree'])
+
+
+def test_asking_for_no_modules_is_not_a_successful_estimate():
+    """`modules=[]` used to mean ALL, because an empty list is falsy -- the opposite of what a
+    caller wrote. It now measures nothing, needs no yosys, and is NOT ok."""
+    import tempfile
+    import fixtures
+    from dwn2rtl.build import build
+
+    outdir = build(fixtures.make('tiny'),
+                   os.path.join(tempfile.mkdtemp(), 'rtl'), input_bits=8).outdir
+
+    r = estimate(outdir, modules=[])
+    assert r.modules == []
+    assert not r.ok, 'an empty estimate must not read as success'

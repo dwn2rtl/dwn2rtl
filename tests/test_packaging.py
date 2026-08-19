@@ -178,3 +178,33 @@ def test_cli_output_is_ascii():
     from dwn2rtl.cli import build_parser
     text = build_parser().format_help()
     text.encode('ascii')                 # raises UnicodeEncodeError if anything slipped in
+
+
+def test_a_read_only_output_file_is_an_error_not_a_traceback(tmp_path):
+    """⚠️ The CLI listed FileNotFoundError and NotADirectoryError by name, so PermissionError --
+    equally an OSError, and what you get from a file an editor or a copy left read-only --
+    reached the user as a stack trace.
+    """
+    import stat
+    import subprocess
+    import sys
+
+    import fixtures
+    from dwn2rtl.build import build
+
+    outdir = build(fixtures.make('tiny'), str(tmp_path / 'rtl'), input_bits=8).outdir
+    ck = tmp_path / 'm.dwn'
+    model, therm = fixtures.make_live('tiny')
+    import dwn2rtl
+    dwn2rtl.save(model, therm, str(ck))
+
+    target = os.path.join(outdir, 'dwn_core.v')
+    os.chmod(target, stat.S_IREAD)
+    try:
+        r = subprocess.run([sys.executable, '-m', 'dwn2rtl.cli', 'build', str(ck),
+                            '--out', outdir], capture_output=True, text=True, timeout=600)
+        assert r.returncode == 1
+        assert 'Traceback' not in r.stderr, r.stderr
+        assert r.stderr.startswith('dwn2rtl build:')
+    finally:
+        os.chmod(target, stat.S_IWRITE)

@@ -259,6 +259,23 @@ def estimate(outdir, modules=None, yosys=None, timeout=1800):
             f'{outdir} does not look like a dwn2rtl build -- no dwn_top.v. '
             'Run `dwn2rtl build` first.')
 
+    # ⚠️ Arguments are checked BEFORE the tool is looked for, so the error a caller gets does
+    # not depend on whether yosys happens to be installed. Until it was, all three of these
+    # failed with "no working yosys found" on this machine and with a bare KeyError on a
+    # machine that had it.
+    if isinstance(modules, str):
+        raise TypeError(f"modules must be a sequence, not a string -- try ('{modules}',)")
+    # `modules=[]` used to mean ALL, because an empty list is falsy. verify(levels=()) honours
+    # empty and reports not-ok, and these two must not disagree about what "nothing" means.
+    wanted = list(MODULES) if modules is None else list(modules)
+    unknown = [m for m in wanted if m not in MODULES]
+    if unknown:
+        raise ValueError(f'unknown module(s) {unknown}; expected any of {sorted(MODULES)}')
+
+    if not wanted:
+        # Nothing to measure, so do not demand a tool to measure it with. The report is empty
+        # and therefore NOT ok -- `all([])` is True, and an empty run must never read as success.
+        return EstimateReport(outdir, Yosys(exe='(none needed)'), [])
+
     tool = find_yosys(yosys)
-    wanted = list(modules or MODULES)
     return EstimateReport(outdir, tool, [_run(tool, outdir, m, timeout) for m in wanted])

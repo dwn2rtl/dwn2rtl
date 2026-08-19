@@ -23,8 +23,11 @@ def cmd_build(args):
 
     try:
         report = build(args.checkpoint, args.out, input_bits=args.input_bits)
-    except (CheckpointError, FileNotFoundError, NotADirectoryError, IsADirectoryError,
-            ValueError) as e:
+    # ⚠️ OSError, not a list of its subclasses. FileNotFoundError and NotADirectoryError were
+    # listed by name, so a read-only file in the output directory -- PermissionError, equally an
+    # OSError -- reached the user as a traceback. Whatever the filesystem refuses, the user needs
+    # a sentence, not a stack.
+    except (CheckpointError, ValueError, OSError) as e:
         # These messages are the contract -- they name the missing object and show the fix.
         # Wrapping them in a traceback buries the part the user needs. ValueError covers the
         # precision guards, which are ordinary bad input rather than a broken checkpoint.
@@ -43,7 +46,7 @@ def cmd_verify(args):
 
     try:
         report = verify(args.dir, simulator=args.simulator)
-    except (FileNotFoundError, SimulatorNotFound) as e:
+    except (SimulatorNotFound, ValueError, OSError) as e:
         print(f'dwn2rtl verify: {e}', file=sys.stderr)
         return 1
 
@@ -60,7 +63,7 @@ def cmd_estimate(args):
 
     try:
         report = estimate(args.dir, yosys=args.yosys)
-    except (FileNotFoundError, YosysNotFound) as e:
+    except (YosysNotFound, ValueError, OSError) as e:
         print(f'dwn2rtl estimate: {e}', file=sys.stderr)
         return 1
 
