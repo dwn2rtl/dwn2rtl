@@ -275,6 +275,24 @@ def _validate(ck):
     from .extract import extract_wiring
 
     width_in = int(thr.numel())
+
+    # ⚠️ THE THERMOMETER MUST BELONG TO THIS MODEL. A learnable mapping's `weights` is
+    # (input_size, output_size * n), so the first layer states outright how many bits it expects
+    # -- and that is exactly features x z. Saving the wrong thermometer beside a model is a
+    # plausible mistake (a DWN is two objects, and they are saved separately), and the range
+    # check below cannot catch a thermometer that is too LARGE: every index still fits. The
+    # design would build, the gate would pass -- vectors are generated from the same wrong
+    # assumption -- and real features would land in the wrong bit positions.
+    first = f'{idx[0]}.mapping.weights'
+    if first in sd:
+        expected_in = int(sd[first].shape[0])
+        if expected_in != width_in:
+            raise CheckpointError(
+                f'the thermometer does not match this model: layer {idx[0]} expects '
+                f'{expected_in} input bits, but the thresholds are {tuple(thr.shape)} = '
+                f'{width_in} bits. This usually means the model and thermometer came from '
+                f'different training runs.')
+
     for i in idx:
         wiring, _ = extract_wiring(sd, i, n)
         if wiring.size and (wiring.min() < 0 or wiring.max() >= width_in):

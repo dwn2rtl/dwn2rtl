@@ -508,7 +508,38 @@ below int64's maximum by construction.
 Recorded because a negative result that was actually measured is worth more than a hazard nobody
 checked -- and because the next person to look at this will have the same suspicion.
 
-## 21. What survived the audit
+## 21. Measured — `words_to_hex` and the top level are clean, at every width
+
+`bits_to_hex` had a packing bug at any width off a byte boundary, so its counterpart was the
+obvious next suspect. It is not affected, and the reason is structural: `words_to_hex` builds
+the value with **Python integers** rather than `np.packbits`, so there is no byte to pad.
+
+Checked against an exact reference at word widths 1-33, feature counts 1-8, and the two's
+complement extremes of each width: **0 wrong values, 0 truncations.** The field width is
+`len(words) * word_bits // 4`, which truncates -- but Python's format width is a MINIMUM, so a
+value needing another nibble simply prints one. Under-specified padding, never a wrong value.
+
+**End to end, 32 combinations** of feature count (1-7), thermometer bits and `--input-bits`,
+covering every residue of `X_W` mod 8: **all pass.** Both helpers are now pinned by tests across
+widths, so neither can regress into the other's bug.
+
+## 22. Found — the thermometer was never checked against the model it came with
+
+A DWN is two objects, saved separately, so pairing the wrong ones is a mistake the README
+already warns about in the other direction. **A thermometer with 99 features loaded happily
+against a model whose first layer expects 8.**
+
+⚠️ **The existing range check cannot catch this**, and that is the point: it rejects a wiring
+index that is out of range, so a thermometer that is too SMALL fails -- while one that is too
+LARGE leaves every index comfortably in range. The design would build, and **the gate would
+pass**, because the test vectors are generated from the same wrong assumption. Only real
+features would reveal it, by landing in the wrong bit positions.
+
+Detectable exactly: a learnable mapping's `weights` is `(input_size, output_size * n)`, so the
+first layer states how many bits it expects, and that must equal `features x z`. Now checked,
+naming the likely cause -- a model and thermometer from different training runs.
+
+## 23. What survived the audit
 
 Worth recording, because it is the larger half:
 
@@ -523,6 +554,9 @@ Worth recording, because it is the larger half:
 - **Builds are deterministic** -- the same checkpoint and seed produce byte-identical output,
   and so do two runs with no seed at all.
 - **Tiny and large models** -- a one-node one-class model, and 5,000 vectors, both pass.
+- **Degenerate model shapes** -- a group of exactly one node per class, every node reading the
+  same input bit, identical thresholds, descending thresholds, all-negative thresholds: all
+  bit-exact. And a final layer that does not divide num_classes is refused by name.
 - **The report objects** stay ASCII, refuse to divide by a zero-LUT core, and an empty estimate
   is not ok -- `all([])` is True, and that trap is guarded in both commands now.
 - **Paths** -- spaces, unicode, relative, trailing separators all work; an over-long Windows path

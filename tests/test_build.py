@@ -525,3 +525,39 @@ def test_the_emitted_scaling_file_is_strict_json(tmp_path):
         raise ValueError(f'bare {c} is not valid JSON')
 
     json.loads(raw, parse_constant=reject)
+
+
+@pytest.mark.parametrize('word_bits', [1, 2, 3, 4, 5, 7, 8, 9, 13, 16, 17, 32])
+@pytest.mark.parametrize('n_features', [1, 2, 3, 5])
+def test_packed_feature_words_survive_any_width(word_bits, n_features):
+    """The companion to the binarized-vector check. `words_to_hex` builds the value with Python
+    ints rather than np.packbits, so it never had that bug -- this pins that it stays that way,
+    including two's complement at the extremes.
+    """
+    import numpy as np
+    from dwn2rtl.vectors import words_to_hex
+
+    lo, hi = -(2 ** (word_bits - 1)), 2 ** (word_bits - 1) - 1
+    rng = np.random.default_rng(word_bits * 31 + n_features)
+    for row in ([lo] * n_features, [hi] * n_features, [-1] * n_features, [0] * n_features,
+                list(rng.integers(lo, hi + 1, size=n_features))):
+        expected = 0
+        for f, w in enumerate(row):
+            expected |= (int(w) & ((1 << word_bits) - 1)) << (f * word_bits)
+        s = words_to_hex(np.array(row, dtype=np.int64), word_bits)
+        assert int(s, 16) == expected, f'{row} at {word_bits} bits'
+        assert len(s) * 4 >= expected.bit_length(), 'the string must represent every set bit'
+
+
+@pytest.mark.sim
+@pytest.mark.parametrize('n_features,input_bits', [(1, 1), (3, 5), (7, 12), (6, 3)])
+def test_the_gate_passes_at_awkward_feature_widths(n_features, input_bits, tmp_path):
+    """x_flat is n_features * word_bits wide, and nothing gated a width off a byte boundary
+    until the binarized-vector bug turned up. These land on several residues mod 8."""
+    from dwn2rtl.verify import verify
+
+    ck = fixtures.make_checkpoint(n_features=n_features, z=3, n=2,
+                                  layers=(12, 9), num_classes=3)
+    r = build(ck, str(tmp_path / 'rtl'), input_bits=input_bits)
+    report = verify(r.outdir)
+    assert report.ok, '\n'.join(report.lines())

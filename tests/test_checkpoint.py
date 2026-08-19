@@ -425,3 +425,27 @@ def test_a_usable_scaler_still_survives():
         n = ck['thermometer']['thresholds'].shape[0]
         ck['scaler'] = {'mean': [0.5] * n, 'scale': [scale] * n}
         assert normalize(ck)['scaler']['scale'] == [scale] * n
+
+
+@pytest.mark.parametrize('features', [99, 2])
+def test_a_thermometer_from_another_model_is_refused(features):
+    """⚠️ A DWN is two objects saved separately, so pairing the wrong ones is a real mistake --
+    and the wiring range check cannot catch a thermometer that is too LARGE, because every index
+    still fits. The design would build and the gate would pass, because the vectors are generated
+    from the same wrong assumption, while real features landed in the wrong bit positions.
+
+    A learnable mapping states the expected input size outright: weights is
+    (input_size, output_size * n).
+    """
+    ck = fixtures.make_checkpoint(n_features=4, z=2, n=2, layers=(12, 8), num_classes=2)
+    z = ck['config']['thermometer_bits']
+    ck['thermometer'] = {'thresholds': torch.zeros(features, z)}
+
+    with pytest.raises(CheckpointError, match='does not match this model'):
+        normalize(ck)
+
+
+def test_the_matching_thermometer_still_loads():
+    """The guard must not reject the ordinary pairing."""
+    ck = fixtures.make_checkpoint(n_features=4, z=2, n=2, layers=(12, 8), num_classes=2)
+    assert normalize(ck)['config']['thermometer_bits'] == 2
