@@ -470,7 +470,45 @@ comparison is still latency-sensitive by lying to it about the latency:
 Both fixes are now gated at six depths including `(0,0,0,0)` and `(1,2,1,1)`, and the
 latency-sensitivity check is a test of its own.
 
-## 19. What survived the audit
+## 19. Found — a scaler nobody could apply, and a file that was not valid JSON
+
+`input_scaling.json` is not metadata: it is an **instruction the user must follow** before
+driving `x_flat`. So a scaler that cannot be applied is worse than no scaler at all.
+
+| the checkpoint held | what shipped |
+|---|---|
+| `scale = 0` | "apply (x - mean) / 0" -- an instruction that divides by zero |
+| `scale = NaN` or `inf` | an instruction that is meaningless |
+| `mean = NaN` | the same |
+
+⚠️ **And the file stopped being JSON.** Python's `json.dump` writes bare `NaN` and `Infinity`,
+which the JSON spec does not have -- so `input_scaling.json` was **rejected by strict parsers**
+(JavaScript's `JSON.parse`, Go, Rust serde all refuse it). A user's toolchain would fail on a
+file this tool told them to read, for a reason nothing in the file explains.
+
+Both symptoms have one cause, so there is one fix: `_scaler_of` now refuses a non-finite or
+zero scale, naming the likely reason (a constant or empty feature at fitting time, where
+scikit-learn substitutes 1.0 rather than 0). A negative scale is still accepted -- it flips a
+sign, which is unusual but perfectly followable. And the emitted file is now checked to parse
+under a strict reader, not merely under Python's.
+
+## 20. Measured — the `input_bits` axis is clean, and the reason is worth keeping
+
+Tests only ever used `input_bits=8`, so the axis got the same treatment as the byte-boundary
+one. **Every width from 1 to 63 builds and passes the gate**, and 64 is refused at the boundary
+because the word would exceed int64.
+
+⚠️ The interesting part is a bug that is NOT there. Quantising a threshold computes
+`t * 2**frac`, and with a wide word that product can pass float64's 53-bit mantissa -- the
+obvious place for silent precision loss. Checked against exact rational arithmetic at ten
+combinations up to a 63-bit word: **error of zero, every time.** Multiplying a float64 by a
+power of two only changes the exponent, so it is exact, and `word_bits <= 64` bounds the product
+below int64's maximum by construction.
+
+Recorded because a negative result that was actually measured is worth more than a hazard nobody
+checked -- and because the next person to look at this will have the same suspicion.
+
+## 21. What survived the audit
 
 Worth recording, because it is the larger half:
 

@@ -395,3 +395,33 @@ def test_from_model_names_the_argument_not_an_attribute(wrong):
     mistake, so the message points at load()."""
     with pytest.raises(CheckpointError, match='expects a trained model'):
         from_model(wrong, torch.zeros(4, 2))
+
+
+@pytest.mark.parametrize('mean,scale,match', [
+    (0.0, 0.0, 'divides by zero'),
+    (1.0, 0.0, 'divides by zero'),
+    (float('nan'), 1.0, 'NaN or infinite'),
+    (0.0, float('nan'), 'NaN or infinite'),
+    (0.0, float('inf'), 'NaN or infinite'),
+])
+def test_an_unusable_scaler_is_refused(mean, scale, match):
+    """⚠️ input_scaling.json is an INSTRUCTION the user must follow -- apply (x - mean) / scale.
+    A zero scale makes that impossible and NaN makes it meaningless, so accepting them ships a
+    design nobody can drive. It also wrote bare NaN/Infinity into the file, which is not valid
+    JSON and is rejected by strict parsers in most languages.
+    """
+    ck = fixtures.make('tiny')
+    n = ck['thermometer']['thresholds'].shape[0]
+    ck['scaler'] = {'mean': [mean] * n, 'scale': [scale] * n}
+    with pytest.raises(CheckpointError, match=match):
+        normalize(ck)
+
+
+def test_a_usable_scaler_still_survives():
+    """The guard must not reject the ordinary case, including a negative scale, which flips a
+    sign but is perfectly followable."""
+    for scale in (2.0, -2.0, 1e-8):
+        ck = fixtures.make('tiny')
+        n = ck['thermometer']['thresholds'].shape[0]
+        ck['scaler'] = {'mean': [0.5] * n, 'scale': [scale] * n}
+        assert normalize(ck)['scaler']['scale'] == [scale] * n

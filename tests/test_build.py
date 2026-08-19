@@ -506,3 +506,22 @@ def test_the_testbench_is_still_sensitive_to_latency(tmp_path):
         open(path, 'w').write(re.sub(r'(DWN_CORE_LATENCY )\d+', rf'\g<1>{claimed}', src))
         assert not verify(outdir, levels=('core',)).ok, \
             f'a design claiming latency {claimed} instead of {real} was reported as correct'
+
+
+def test_the_emitted_scaling_file_is_strict_json(tmp_path):
+    """⚠️ Bare NaN and Infinity are Python's json.dump, not JSON. A user's toolchain reading
+    input_scaling.json with a strict parser -- JavaScript, Go, Rust -- would fail on a file we
+    told them to read."""
+    import json
+
+    ck = fixtures.make('tiny')
+    n = ck['thermometer']['thresholds'].shape[0]
+    ck['scaler'] = {'mean': [0.5] * n, 'scale': [2.0] * n}
+    outdir = build(ck, str(tmp_path / 'rtl'), input_bits=8).outdir
+
+    raw = open(os.path.join(outdir, 'input_scaling.json')).read()
+
+    def reject(c):
+        raise ValueError(f'bare {c} is not valid JSON')
+
+    json.loads(raw, parse_constant=reject)

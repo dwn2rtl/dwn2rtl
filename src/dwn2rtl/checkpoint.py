@@ -112,6 +112,22 @@ def _scaler_of(obj, n_features):
         raise CheckpointError(
             f'scaler has {mean.size} means and {scale.size} scales but the model has '
             f'{n_features} features')
+
+    # ⚠️ THE FILE THIS BECOMES IS AN INSTRUCTION THE USER MUST FOLLOW: apply (x - mean) / scale
+    # before quantizing. A scale of 0 makes that impossible, and NaN or inf makes it meaningless
+    # -- so accepting them writes a design nobody can drive correctly, and the emitted
+    # input_scaling.json then contains bare NaN/Infinity, which is not valid JSON and is
+    # rejected by strict parsers in most languages.
+    if not (np.isfinite(mean).all() and np.isfinite(scale).all()):
+        raise CheckpointError(
+            'the scaler contains NaN or infinite values, so (x - mean) / scale cannot be '
+            'applied. This usually means a feature was constant or empty during fitting.')
+    zeros = int((scale == 0).sum())
+    if zeros:
+        raise CheckpointError(
+            f'{zeros} of {scale.size} scaler scales are zero, so (x - mean) / scale divides by '
+            'zero. scikit-learn substitutes 1.0 for zero-variance features; a real zero here '
+            'means the scaler was not fitted, or was fitted on constant data.')
     return {'mean': mean.tolist(), 'scale': scale.tolist()}
 
 
