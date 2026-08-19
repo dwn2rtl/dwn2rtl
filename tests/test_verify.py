@@ -431,3 +431,49 @@ def test_verify_drives_verilator_end_to_end(tmp_path):
     for level in report.levels:
         assert level.vectors > 0, f'{level.level} ran no vectors'
         assert level.mismatches == 0
+
+
+@pytest.mark.sim
+def test_a_users_own_verilog_in_the_directory_is_not_compiled(tmp_path):
+    """⚠️ The README tells users to instantiate dwn_top in their own harness. A harness dropped
+    into the emitted directory used to be swept up by a *.v glob and compiled into the gate, so a
+    syntax error in a file that is not under test broke verification entirely.
+    """
+    import fixtures
+    from dwn2rtl.build import build
+
+    outdir = build(fixtures.make('tiny'), str(tmp_path / 'rtl'), input_bits=8).outdir
+    with open(os.path.join(outdir, 'zz_my_harness.v'), 'w') as f:
+        f.write('module oops  this is not verilog at all ;;;\n')
+
+    report = verify(outdir)
+    assert report.ok, '\n'.join(report.lines())
+
+
+def test_a_missing_design_file_is_reported_by_name(tmp_path):
+    """Naming what is absent beats a compile error about an unknown module type."""
+    import fixtures
+    from dwn2rtl.build import build
+    from dwn2rtl.verify import DESIGN_SOURCES
+
+    outdir = build(fixtures.make('tiny'), str(tmp_path / 'rtl'), input_bits=8).outdir
+    os.remove(os.path.join(outdir, 'popcount.v'))
+
+    report = verify(outdir)
+    assert not report.ok
+    assert all(r.status == 'MISSING' for r in report.levels), report.lines()
+    assert 'popcount.v' in report.levels[0].detail
+
+
+def test_levels_are_validated(tmp_path):
+    """⚠️ A bare string iterates into characters, so levels='core' raised KeyError('c') -- the
+    classic Python trap, from an argument a user is expected to pass."""
+    import fixtures
+    from dwn2rtl.build import build
+
+    outdir = build(fixtures.make('tiny'), str(tmp_path / 'rtl'), input_bits=8).outdir
+
+    with pytest.raises(TypeError, match='not a string'):
+        verify(outdir, levels='core')
+    with pytest.raises(ValueError, match='unknown level'):
+        verify(outdir, levels=('core', 'topp'))

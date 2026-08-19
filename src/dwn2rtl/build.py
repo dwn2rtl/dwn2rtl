@@ -149,7 +149,18 @@ def build(checkpoint, outdir, input_bits=None, pipeline=None, n_random=None, see
     ck = ckpt.load(checkpoint) if isinstance(checkpoint, (str, os.PathLike)) \
         else ckpt.normalize(checkpoint)
 
+    # ⚠️ Public arguments, checked before use. A dict here gave "'dict' object has no attribute
+    # 'lut'" and a string n_random reached numpy as a UFuncTypeError -- both name a library
+    # internal rather than the argument the caller got wrong.
     pipeline = pipeline or Pipeline()
+    if not isinstance(pipeline, Pipeline):
+        raise TypeError(f'pipeline must be a dwn2rtl.Pipeline, got {type(pipeline).__name__}. '
+                        'Try Pipeline(enc=1, lut=1, pop=1, out=1).')
+    if n_random is not None:
+        if isinstance(n_random, bool) or not isinstance(n_random, int):
+            raise TypeError(f'n_random must be an int, got {type(n_random).__name__}')
+        if n_random < 0:
+            raise ValueError(f'n_random must be >= 0, got {n_random}')
     thresholds = ck['thermometer']['thresholds'].numpy()
     precision = precision_for(thresholds, input_bits=input_bits)
 
@@ -201,6 +212,16 @@ def build(checkpoint, outdir, input_bits=None, pipeline=None, n_random=None, see
             f'the checkpoint carries a scaler this tool did not recognize '
             f'({scaler.get("unrecognized")}). If training scaled its inputs, whatever drives '
             'x_flat must apply the same scaling.')
+    elif os.path.exists(scaling_path):
+        # ⚠️ EVERY OTHER EMITTED FILE IS OVERWRITTEN; this one is conditional, so a leftover
+        # survives. Building an unscaled model over a scaled one left the PREVIOUS model's
+        # mean and scale sitting in the directory, and a user following it would apply another
+        # model's transformation -- the design then runs at chance and looks healthy, which is
+        # the exact failure the file exists to prevent.
+        os.remove(scaling_path)
+        warnings.append(
+            'removed a stale input_scaling.json left by an earlier build in this directory. '
+            'This model records no scaler, so nothing should be applied to x_flat.')
     for name in skipped_tb:
         warnings.append(
             f'{name} is EMPTY in the installed package and was not copied -- that level has no '

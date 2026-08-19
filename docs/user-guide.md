@@ -99,6 +99,7 @@ it happens:
 |---|---|
 | core PASS, top FAIL | the encoder — nothing else needs re-examining |
 | core FAIL, top FAIL | the network; fix that and this follows |
+| core FAIL, top PASS | neither — the design is fine and the *core-level vectors* are not. The top level drives the same core through the encoder, so a core that computes correctly there computes correctly everywhere. Suspect `x_binarized.hex` / `expected.hex`, or anything that edited them |
 
 **Nothing that was not checked is reported as a pass.** A missing testbench, an empty one, a
 compile error, a simulation that did not finish, or a directory with no runnable levels at all —
@@ -390,6 +391,7 @@ only the network understates the design by most of its cost.
 | `verify` finds no simulator | `verify` is the gate and refuses to report success without running. Install iverilog (§1) or pass `--simulator <path>`. |
 | `x/y classes hit` is low | Random vectors will not reach every class on a model with rare classes. Coverage of the RTL is unaffected; use §6 if you want your real class distribution. |
 | torch fails to install with a long filename error | Windows `MAX_PATH`. Use a shallow directory. See §1. |
+| you keep your own Verilog in the emitted directory | Fine. `verify` compiles only the files it emitted, so your harness can sit alongside them without being pulled into the gate. |
 
 ---
 

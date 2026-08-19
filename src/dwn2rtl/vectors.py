@@ -33,7 +33,18 @@ def bits_to_hex(row, width):
     the way a reversed address concatenation is, which makes the two bugs mask each other.
     """
     assert row.size == width
-    return np.packbits(row[::-1].astype(np.uint8), bitorder='big').tobytes().hex()
+    # ⚠️ PAD TO A WHOLE BYTE FIRST. np.packbits pads a partial byte on the LOW side, so a width
+    # that is not a multiple of 8 came out shifted LEFT by the padding -- 12 bits multiplied by
+    # 16, 18 bits by 64 -- while 8, 16 and 24 were correct. Every fixture and both studied
+    # models happen to have widths divisible by 8 (MNIST 784x3 = 2352, JSC 16x8 = 128), which
+    # is why the gate never saw it. Padding at the HIGH end instead makes the extra bits
+    # leading zeros, which is what a hex literal wants anyway.
+    #
+    # Same defect, same cause, as the one emit_core.table_to_hex documents. It was fixed there
+    # and not here.
+    padded = np.concatenate([row.astype(np.uint8),
+                             np.zeros((-width) % 8, dtype=np.uint8)])
+    return np.packbits(padded[::-1], bitorder='big').tobytes().hex()
 
 
 def words_to_hex(words, word_bits):

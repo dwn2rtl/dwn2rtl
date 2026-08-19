@@ -17,7 +17,17 @@ DEFAULT_CONTINUOUS_FRAC_BITS = 12
 
 def required_int_bits(thresholds):
     """Integer bits needed to represent every threshold. A hard floor, not a heuristic."""
-    span = float(np.max(np.abs(np.asarray(thresholds, dtype=np.float64))))
+    thr = np.asarray(thresholds, dtype=np.float64)
+    # ⚠️ NON-FINITE VALUES HANG THIS LOOP. `(1 << bits) <= inf` is always true, so an inf
+    # threshold spins forever -- no error, no traceback, just a tool that never returns, which
+    # is worse than either. NaN is quieter and equally wrong: every comparison is False, so it
+    # would report 0 integer bits for a model that cannot be represented at all.
+    if not np.isfinite(thr).all():
+        bad = int((~np.isfinite(thr)).sum())
+        raise ValueError(
+            f'{bad} threshold(s) are NaN or infinite, so no fixed-point width can represent '
+            'them. The thermometer was probably fitted on data containing NaN.')
+    span = float(np.max(np.abs(thr)))
     bits = 0
     while (1 << bits) <= span:
         bits += 1

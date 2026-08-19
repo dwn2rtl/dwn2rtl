@@ -179,3 +179,16 @@ def test_make_is_deterministic():
 def test_unknown_shape_is_refused():
     with pytest.raises(KeyError, match='unknown shape'):
         fixtures.make('does-not-exist')
+
+
+def test_some_shape_has_a_width_off_a_byte_boundary():
+    """⚠️ The gap that hid a real defect for the project's whole life.
+
+    bits_to_hex packed core vectors with np.packbits, which pads a partial byte on the LOW side,
+    so any width not divisible by 8 came out shifted left. Every fixture WAS 8 or 24 wide, and
+    so are both studied models, so the gate never drove the broken path.
+    """
+    widths = {n: p['n_features'] * p['z'] for n, p in fixtures.SHAPES.items()}
+    off = {n: w for n, w in widths.items() if w % 8}
+    assert off, (f'every fixture width is a multiple of 8 ({widths}) -- the byte-boundary bug '
+                 'would be invisible again')

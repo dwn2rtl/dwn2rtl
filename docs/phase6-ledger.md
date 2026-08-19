@@ -149,32 +149,54 @@ needs a compiler; WSL is the way). Hence Linux-only in CI.
 **Marker renamed `lint` -> `verilator`**, since it now means "needs this tool" rather than "does
 linting", matching how `yosys` is named.
 
-## 8. ⚠️ Decided — the `--simulator` backend is NOT built
+## 8. ⚠️ ~~Decided — the `--simulator` backend is NOT built~~ — REVERSED, and built
 
-Units 2-5 of the original plan would let a user run `dwn2rtl verify --simulator verilator`. They
-are not built, and the reason is that the probe moved the value somewhere else.
+> **Reversed the same day.** The reasoning below was sound on its own terms and the conclusion
+> did not follow: the only load-bearing argument was "nobody has asked", and the owner then
+> asked. Kept in full because the *measurements* in it still hold and still shape the design --
+> iverilog remains the default because of them.
 
-**What the backend would add is only user-facing choice.** The verification value -- two
-independent simulators agreeing -- is already had, in CI, on every commit, without touching
-`verify.py`.
+Units 2-5 of the original plan let a user run `dwn2rtl verify --simulator verilator`.
 
-**The honest argument for it**, recorded so it is not rediscovered: a user with Verilator and no
-iverilog cannot run `verify` at all today, since `find_simulator` looks only for iverilog and
-`_run_level` hardcodes its two-command shape. That is a real gap, and Verilator is the common
-simulator in RISC-V and academic toolchains.
+**What the backend adds is user-facing choice.** The verification value -- two independent
+simulators agreeing -- was already had in CI without touching `verify.py`.
 
-**Why it still loses:** the cost to that user is `apt install iverilog`, about 9 MB and one
+**The argument for it:** a user with Verilator and no iverilog could not run `verify` at all,
+since `find_simulator` looked only for iverilog and `_run_level` hardcoded its two-command
+shape. Verilator is the common simulator in RISC-V and academic toolchains.
+
+~~**Why it still loses:** the cost to that user is `apt install iverilog`, about 9 MB and one
 command, against a permanent second discovery path and second command shape in the one module
-where correctness matters most.
+where correctness matters most.~~ **Withdrawn.** That cost is real but small, and "optional extra
+tool support, documented as Linux/macOS" is an ordinary thing for a tool to have -- the yosys
+precedent is exactly it.
 
-**Build it when any of these happens** -- the probe has de-risked every unknown, so it is roughly
-half a day:
+### What was built
 
-1. a real user reports being blocked with only Verilator installed
-2. designs get big enough for simulation time to matter (Verilator's actual advantage, which
-   current sizes do not expose -- 0.04 s against 0.04 s)
-3. the CI cross-check goes red, i.e. the two simulators genuinely disagree, which would make
-   multi-simulator support a correctness feature rather than a convenience
+- `Simulator` owns its two commands, so `_run_level` no longer knows which tool it drives and
+  adding a simulator never touches the code that decides PASS or FAIL. Output parsing is
+  unchanged, because the *testbench* prints the RESULT line.
+- `--simulator verilator`, or an explicit path. `verify(simulator=...)` from Python.
+- Discovery order: iverilog anywhere (PATH, then the installer directories) -> verilator ->
+  fail. ⚠️ **A fallback-located iverilog outranks an on-PATH verilator, deliberately**, on the
+  measurement below.
+- Docs say Linux and macOS, and say why Windows is absent: Verilator generates C++ and needs a
+  compiler, so WSL is the route there.
+
+### The measurement that decides the default
+
+| | compile + run, same design |
+|---|---|
+| iverilog | **0.38 s** |
+| verilator | **14.74 s** |
+
+**39x, and the opposite of the usual intuition.** Verilator's advantage is throughput on long
+simulations; here the simulation is 0.04 s and the C++ compile dominates. So Verilator is never
+selected automatically when iverilog exists, and the CLI help says why.
+
+⚠️ **One test could not run locally.** `test_verify_drives_verilator_end_to_end` needs Verilator,
+which does not install natively on Windows, so the assembled backend path first executed on CI's
+Linux jobs. The command shape itself was proven during the probe (504 and 519 vectors, PASS).
 
 ## 9. Built — the comment cull, across every code file
 
@@ -202,12 +224,202 @@ described several lines away. Confirmed by git to predate this phase. Reattached
 
 ---
 
+## 10. ⚠️ Built — an error-path audit, and four tracebacks it found
+
+The happy paths were exhaustively tested; the wrong-input paths were not. A harness walked **30
+ways to hold the tool wrong** -- bad checkpoint shapes, bad config values, bad build arguments,
+and `verify` against five kinds of damaged output -- asking of each: does it fail with a NAMED
+reason, and does it ever silently succeed?
+
+**26 gave a clean error. Four reached the user as a raw traceback**, each fixed at the layer
+that owns it:
+
+| | was | now |
+|---|---|---|
+| a file that is not a checkpoint | `UnpicklingError` from inside torch | says what it expected, shows the `torch.save` line |
+| `num_classes = 0` | `ZeroDivisionError` from inside the golden model | a positive-integer guard, before anything divides |
+| `--input-bits 999` | `OverflowError: int too big to convert` | bounded -- values are int64, so 64 bits is a real ceiling |
+| `--out` pointing at a file | raw `FileExistsError [WinError 183]` | "is a file, not a directory" |
+
+⚠️ The CLI's `build` handler also caught only `CheckpointError` and `FileNotFoundError`, so two
+of the new errors would have tracebacked anyway. Widened to the bad-input family.
+
+**What held up:** `verify` against damage. Emptying `x_quant.hex`, `expected_top.hex`,
+`dwn_core.v` or `dwn_top_params.vh`, or deleting `tb/` entirely -- **none reported PASS.** Each
+gave FAIL, ERROR or MISSING with real detail. The "nothing unchecked reads as a pass" claim
+survives contact with a broken directory, which was the likeliest place to find a hole.
+
+**Left as a finding, not a change:** `--input-bits 0` is legitimate (integer-valued inputs) but
+yields `Q0.0 signed (1-bit)`, and the report says *"provably lossless"* two lines above *"10 of
+24 thresholds quantise to a duplicate comparison"*. Both are true about different things --
+the quantiser is order-preserving, the comparator collapse is a separate loss -- but printed
+together they read as "nothing was lost".
+
+**And the scaling question that prompted deferring `--data` was measured here**: integer bits
+are derived exactly from the thresholds, so the word auto-widens (Q2.12 for standard-scaled,
+Q10.12 for ±500) and saturation stays lossless in every case tried. Resolution is not
+guaranteed, but insufficiency is *reported* rather than silent. A visible, correctable failure
+mode is what makes `--data` optional rather than necessary.
+
+## 11. 🎯 Found — the emitted core vectors were wrong at any width off a byte boundary
+
+The audit went adversarial: build deliberately awkward models and try to break the tool. One
+shape failed the gate, and the failure was a combination the docs do not list.
+
+```
+n_features=6, z=3  ->  core=FAIL (330 mismatches), top=PASS
+```
+
+⚠️ **core FAIL while top PASSES is not "the network".** The top level drives the same core
+through the encoder and is bit-exact, so the RTL is right and the *core-level vectors* are
+wrong. Bisecting the shape:
+
+| core input width (`n_features * z`) | gate |
+|---|---|
+| 8, 24 | PASS |
+| 12, 18 | **FAIL** |
+
+Failing widths are exactly those not divisible by 8, which is byte packing. `bits_to_hex` used
+`np.packbits`, and **packbits pads a partial byte on the LOW side**, so the value came out
+shifted left by the padding. Measured directly:
+
+| width | emitted |
+|---|---|
+| 8, 16, 24 | correct |
+| 12 | **x16** |
+| 18 | **x64** |
+
+**This is the same defect, from the same cause, that `emit_core.table_to_hex` documents in its
+own comment.** It was found there, fixed there, and the identical bug sat in `vectors.py`
+untouched -- the fix never travelled to the second call site.
+
+### ⚠️ Why the gate ran green over it for the project's whole life
+
+Every fixture was 8 or 24 bits wide. **Both studied models are too** -- MNIST 784x3 = 2352, JSC
+16x8 = 128, both divisible by 8. The broken path was never driven, by anything, ever. 77
+configurations across two datasets did not touch it.
+
+That is the sharpest example yet of the difference between "the tests pass" and "the tests
+exercise the thing": no amount of running the existing suite harder would have found this.
+
+**Fixed** by padding at the high end, where the extra bits become leading zeros. Verified across
+widths 1-39. And the structural fix is the fixture: **`odd_width` (6x3 = 18)** now runs through
+both gate levels on every commit, so the case cannot go dark again. Reverting the fix fails 8
+tests; before the fixture existed it failed none.
+
+⚠️ **What this did and did not affect.** The emitted *hardware* was always correct -- this was
+the testbench's input file. A user with an odd width saw `core FAIL` on a good design and had no
+way to know it was a false alarm. `0.1.0` on PyPI has it, which makes 0.2.0 a fix rather than a
+feature.
+
+## 12. ⚠️ Found — a non-finite threshold hung the tool forever
+
+`required_int_bits` searches upward with `while (1 << bits) <= span`. With `span = inf` that
+condition is always true: **no error, no traceback, no timeout -- it simply never returns.**
+NaN was quieter and equally wrong, reporting 0 integer bits for a model that cannot be
+represented at all.
+
+Worse than a crash, because nothing tells the user anything. Now refused at load, naming NaN in
+the training data as the likely cause, and the function itself can no longer spin whoever calls
+it.
+
+## 13. Found — two ways to be quietly given the wrong thing
+
+**A stale `input_scaling.json`.** Every other emitted file is overwritten on rebuild; this one
+is conditional, so building an unscaled model over a scaled one in the same directory left the
+PREVIOUS model's mean and scale behind. A user following it applies another model's
+transformation -- the design then runs at chance and looks healthy, which is the exact failure
+the file exists to prevent. Now removed, with a warning.
+
+**A user's own Verilog compiled into the gate.** `verify` globbed `*.v` from the directory, and
+the README tells users to instantiate `dwn_top` in their own harness. A harness dropped in there
+was compiled into the test, so a syntax error in a file *not under test* broke verification
+entirely. `verify` now compiles the emitted design by name, and reports a missing one by name
+rather than as "unknown module type".
+
+## 14. ⚠️ Found — metadata that only reaches a comment could stop a design compiling
+
+`run_name` and `results` are written into the emitted Verilog header and nowhere else. Nothing
+in the hardware depends on them, and all four ways they could go wrong were worse than a missing
+comment:
+
+| the checkpoint held | what happened |
+|---|---|
+| `run_name` with a newline | escaped the `//` and emitted **Verilog that does not compile** |
+| `run_name` with non-ASCII | **the build crashed** -- `UnicodeEncodeError` writing the file |
+| `run_name` of 5,000 chars | an unbounded header line |
+| `results={'final_acc': 'ninety'}` | raw `TypeError` from a format string, over a comment |
+
+⚠️ **The unicode one is this project's own documented hazard in a place nobody checked.**
+CLAUDE.md requires stdout to be ASCII because Windows consoles are cp1252 -- and the same
+default applies to `open(path, 'w')`. The rule was known; the second place it applied was not.
+
+Fixed with `comment_safe()` and `accuracy_line()` in `emit_core`: flatten whitespace,
+transliterate to ASCII, truncate, and format a number only when it is one. **Metadata must never
+be able to break a design.**
+
+## 15. Found — two rough edges on the public surface
+
+- **`from_model('a/path.pt', ...)`** raised `'str' object has no attribute 'state_dict'`, naming
+  an implementation detail rather than the argument. Passing a path is the likely mistake, so
+  the message now says so and points at `load()`.
+- **An unrunnable `--simulator`** surfaced a bare `[WinError 2] The system cannot find the file
+  specified`. Discovery deliberately accepts a simulator that merely exists (a version probe is
+  cosmetic and must not cost a working install, `test_verify.py`), so the fix belongs where it
+  is actually run: the failure now names the tool inside the normal report.
+
+## 16. Found — four public arguments that named a library internal
+
+Round three pointed at the API's own arguments rather than at checkpoints or files. Everything
+structural held; what did not was the wording when a caller passes the wrong thing.
+
+| call | said | says now |
+|---|---|---|
+| `build(..., pipeline={'enc': 1})` | `'dict' object has no attribute 'lut'` | "must be a dwn2rtl.Pipeline", with an example |
+| `build(..., n_random='500')` | numpy's `UFuncTypeError` | "n_random must be an int" |
+| `verify(..., levels=('core','topp'))` | bare `KeyError: 'topp'` | "unknown level(s); expected core, top" |
+| `verify(..., levels='core')` | `KeyError: 'c'` | "must be a sequence, not a string" |
+
+⚠️ **The string one is the classic Python trap**: a bare string is a sequence, so it iterated
+into characters and failed on the first one. It is exactly the kind of argument a user passes
+from memory.
+
+**What held in the same round**, and is the larger half again: `pathlib.Path` works for both the
+checkpoint and the output directory; `n_random=0` and `=1` build; `seed=0` builds; `timeout=0`
+fails rather than passing; `levels=()` returns **not ok**, because an empty run is not a pass;
+and a partially-copied directory reports MISSING or refuses outright at every prefix length
+tried, never PASS.
+
+## 17. What survived the audit
+
+Worth recording, because it is the larger half:
+
+- **`verify` never called anything wrong a pass** -- truncated hex, corrupt hex, a single flipped
+  expected answer, an emptied `.v`, a deleted `tb/`: all FAIL, ERROR or MISSING with detail.
+- **The emitter is robust across shapes** -- K=1, n=1, a single feature, z=1, five layers, 240
+  nodes, every threshold identical, thresholds at 1e9: all bit-exact.
+- **Paths** -- spaces, unicode, relative, trailing separators all work; an over-long Windows path
+  is refused rather than half-written.
+- **The CLI** -- 17 hostile invocations (bad flags, missing arguments, wrong file types, an
+  empty file, a directory where a checkpoint belongs): **zero tracebacks**.
+- **The checkpoint reader** -- 23 hostile files: out-of-range and negative wiring, non-power-of-
+  two tables, transposed or empty thresholds, non-contiguous layer indices, `layers` as a
+  string, `n` as a bool. Every one a named error.
+- **Odd dtypes are accepted AND correct** -- int8 tables, float64 tables, a float mapping all
+  pass the gate. Duck-typing working as designed, not a silent hazard: checked rather than
+  assumed, because "accepted" and "correct" are different claims.
+
 ## Phase 6 outcome
 
-**Both halves landed, and the second one changed what the first was for.** The probe was meant
-to decide whether to build a Verilator backend. It found the backend was the least valuable part
-of the idea: linting found a real defect the gate structurally cannot catch, the cross-check
-gives the independent verification a backend was wanted for, and neither required touching the
-product.
+**Both halves landed, and the second one reordered the first.** The probe was meant to decide
+whether to build a Verilator backend. It found the *linting* was the valuable half -- a real
+defect the gate structurally cannot catch -- and that the cross-check gives the independent
+verification the backend was wanted for. The backend was built anyway, second, and deliberately
+not as the default.
 
-**Suite: 246 passing, 15 skipped. Two simulators, one linter, green on both platforms.**
+**Then the audit found the phase's most important defect**, and it was not in any of that: the
+core-level golden vectors were wrong for every model whose encoder width is not a multiple of 8.
+The tests all passed the whole time, because nothing in the repository -- or in two completed
+studies -- had such a width.
+
+**Suite: 283 passing, 16 skipped. Two simulators, one linter, green on both platforms.**

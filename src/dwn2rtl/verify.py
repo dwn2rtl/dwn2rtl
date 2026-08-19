@@ -39,6 +39,16 @@ LEVELS = {
     'top': (os.path.join('tb', 'dwn_top_tb.v'), ('x_quant.hex', 'expected_top.hex')),
 }
 
+# The design `build` emits, by name. ⚠️ NOT a *.v glob of the directory: the README tells users
+# to instantiate dwn_top in their own harness, and a harness dropped in here would be compiled
+# into the gate -- so a syntax error in a file that is not under test broke verification, and an
+# unrelated module could collide with one of ours.
+#
+# Listed rather than imported from build.py, which imports checkpoint.py and therefore torch.
+# `dwn2rtl verify` reads no checkpoint and must not pay for that (see __init__.py).
+DESIGN_SOURCES = ('dwn_top.v', 'dwn_core.v', 'thermometer_encoder.v',
+                  'lut_node.v', 'popcount.v', 'argmax.v', 'pipe_reg.v')
+
 _RESULT = re.compile(r'RESULT\s*:\s*(PASS|FAIL)')
 _VECTORS = re.compile(r'vectors tested\s*:\s*(\d+)')
 _MISMATCHES = re.compile(r'mismatches\s*:\s*(\d+)')
@@ -235,9 +245,12 @@ def _run_level(sim, outdir, level, timeout):
     if missing:
         return LevelResult(level, 'MISSING', detail=f'no vectors: {", ".join(missing)}')
 
-    sources = sorted(f for f in os.listdir(outdir) if f.endswith('.v'))
+    sources = [s for s in DESIGN_SOURCES if os.path.exists(os.path.join(outdir, s))]
     if not sources:
-        return LevelResult(level, 'ERROR', detail='no .v files in this directory')
+        return LevelResult(level, 'ERROR', detail='none of the emitted .v files are here')
+    absent = [s for s in DESIGN_SOURCES if s not in sources]
+    if absent:
+        return LevelResult(level, 'MISSING', detail=f'not in this directory: {", ".join(absent)}')
 
     # The compiled image goes to a temp directory, not into the user's output. But the SIMULATOR
     # runs with cwd=outdir, because $readmemh("x_quant.hex") and `include "top_params.vh" both
@@ -249,6 +262,14 @@ def _run_level(sim, outdir, level, timeout):
                                   timeout=timeout)
         except subprocess.TimeoutExpired:
             return LevelResult(level, 'ERROR', detail=f'compile timed out after {timeout}s')
+        except OSError as e:
+            # ⚠️ Discovery accepts a simulator that merely EXISTS -- deliberately, since a
+            # version probe is informational and some installs are odd. The cost is that an
+            # unrunnable one is only discovered here, where a bare OSError would name a
+            # syscall ("[WinError 2] The system cannot find the file specified") instead of
+            # the tool the user chose.
+            return LevelResult(level, 'ERROR',
+                               detail=f'could not run {compile_cmd[0]}: {e}')
         if comp.returncode != 0:
             return LevelResult(
                 level, 'ERROR',
@@ -293,6 +314,13 @@ def verify(outdir, levels=('core', 'top'), simulator=None, timeout=600, iverilog
         raise FileNotFoundError(
             f'{outdir} does not look like a dwn2rtl build -- no dwn_top.v. '
             'Run `dwn2rtl build` first.')
+
+    # ⚠️ A bare string iterates into characters, so levels='core' raised KeyError('c').
+    if isinstance(levels, str):
+        raise TypeError(f"levels must be a sequence, not a string -- try ('{levels}',)")
+    unknown = [lv for lv in levels if lv not in LEVELS]
+    if unknown:
+        raise ValueError(f'unknown level(s) {unknown}; expected any of {sorted(LEVELS)}')
 
     sim = find_simulator(simulator, iverilog)
     return VerifyReport(outdir, sim,

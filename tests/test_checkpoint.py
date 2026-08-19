@@ -386,3 +386,12 @@ def test_unknown_attribute_still_raises_attributeerror():
     import dwn2rtl
     with pytest.raises(AttributeError, match='no attribute'):
         dwn2rtl.definitely_not_a_thing
+
+
+@pytest.mark.parametrize('wrong', ['a/path.pt', 42, None, {'0.luts': 1}])
+def test_from_model_names_the_argument_not_an_attribute(wrong):
+    """A non-model gave "'str' object has no attribute 'state_dict'", which describes an
+    implementation detail rather than what the caller got wrong. Passing a PATH is the likely
+    mistake, so the message points at load()."""
+    with pytest.raises(CheckpointError, match='expects a trained model'):
+        from_model(wrong, torch.zeros(4, 2))

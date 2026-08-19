@@ -122,6 +122,13 @@ SHAPES = {
     # every layer fixed-mapping, so the learnable path is absent rather than merely unused
     'all_fixed':   dict(n_features=4,  z=2, layers=(12, 8), n=2, num_classes=2,
                         first_layer='fixed'),
+    # ⚠️ n_features*z = 18, NOT a multiple of 8, and that is the entire point of this shape.
+    # bits_to_hex packed the core's binarized vectors with np.packbits, which pads a partial
+    # byte on the LOW side -- so every width off a byte boundary came out shifted left, 12 bits
+    # by 16 and 18 by 64. Every other fixture here is 8 or 24 wide, and both studied models are
+    # too (MNIST 784x3 = 2352, JSC 16x8 = 128), so the gate ran green over a real defect for
+    # its whole life. This shape is what makes that impossible to repeat.
+    'odd_width':   dict(n_features=6,  z=3, layers=(12, 9), n=2, num_classes=3),
 }
 
 

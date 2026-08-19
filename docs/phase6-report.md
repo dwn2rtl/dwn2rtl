@@ -12,10 +12,20 @@ Two goals that looked unrelated and were not. The docs and code were made readab
 who is not us, and a second simulator was pointed at the emitted RTL for the first time.
 
 **The second one found a defect the gate cannot catch, and then changed the plan it was meant to
-serve.** Verilator was probed in order to decide whether to build it in as a backend. It turned
-out the backend was the least valuable part of the idea.
+serve.** Verilator was probed in order to decide whether to build it in as a backend. The probe
+found the *linting* was the valuable half -- the backend was built too, but second, and knowing
+it was the smaller prize.
 
-Nineteen commits. The tool's behaviour is unchanged: nothing here altered what `build` emits.
+⚠️ **And then an adversarial audit found something bigger than either**: the emitted core-level
+golden vectors were wrong for every model whose encoder width is not a multiple of 8. The suite
+had always passed, because nothing in the repository -- or in two completed studies -- had such
+a width.
+
+Twenty-six commits. ⚠️ ~~Nothing here changed what `build` emits~~ -- **withdrawn, and the
+exception is the point**: the vector-packing fix changes `x_binarized.hex` for any model whose
+encoder width is off a byte boundary. The Verilog is byte-for-byte identical; the testbench's
+input file was wrong. `verify` also gained a second simulator, and several bad-input paths
+gained real errors.
 
 ## 2. What was delivered
 
@@ -27,6 +37,11 @@ Nineteen commits. The tool's behaviour is unchanged: nothing here altered what `
 | docs that stand alone | no outside repository named; every claim checkable from here |
 | the comment cull | longest block in `src/` 34 lines -> 13; the four primitives 120 -> 20 |
 | `tests/test_user_guide.py` | the published recipe executed, so a rename breaks a test |
+| `--simulator verilator` | optional second backend, Linux and macOS; iverilog stays the default |
+| bad input fails with a reason | four raw tracebacks, found by an audit of 30 wrong-input cases |
+| **correct vectors at any width** | a byte-packing bug that made 12-bit vectors 16x too large |
+| an `odd_width` fixture | 18 bits, so the gate drives the off-byte path on every commit |
+| metadata that cannot break a design | a newline in `run_name` emitted uncompilable Verilog |
 
 ## 3. Findings that outlive this phase
 
@@ -62,13 +77,17 @@ But the same probe measured two things that dissolved the case for the backend:
 - **Agreement: exact.** 504 and 519 vectors, 0 mismatches, matching iverilog.
 
 So what the backend uniquely offers is *user-facing choice of simulator* -- and the verification
-value it was wanted for could be had in CI without touching the product. It was declined, with
-the argument for it and three trigger conditions written down (`phase6-ledger.md` §8) so the
-decision is revisitable rather than forgotten.
+value it was wanted for could be had in CI without touching the product.
+
+⚠️ It was declined on that basis and then **built the same day**, because the only load-bearing
+argument turned out to be "nobody has asked" and the owner asked. The measurements survived the
+reversal and now shape the design instead of blocking it: iverilog stays the default *because*
+of the 39x, and the CLI help says so. Recording the decision with its evidence is what made
+reversing it a two-minute conversation rather than a re-argument.
 
 **This is phase 4's rule doing something new.** There, measurement cancelled two changes. Here
-measurement did not cancel the work -- it relocated it, from a product feature to a CI check,
-and the CI check was the part that found a bug.
+it *ordered* them: the CI check came first and found a bug, the backend followed and is
+deliberately not the default. Neither would have been true from the argument alone.
 
 ### 3.3 A control turns a plausible story into a fact, twice
 
@@ -87,7 +106,28 @@ as useful for disproving your own claim as for proving it**, and both happened i
 ⚠️ Related, and the reason the waiver is a waiver: *"restructuring is worth it because UNOPTFLAT
 costs simulation speed"* was withdrawn on measurement. It costs nothing measurable here.
 
-### 3.4 Comments compete with each other
+### 3.4 A test suite can be exhaustive and still never touch the bug
+
+The vector-packing defect is the sharpest thing this phase produced, and the reason is not that
+it was subtle. `np.packbits` pads a partial byte on the low side; the project **already knew
+that**, had been bitten by it once, and documents it in `emit_core.table_to_hex`. The fix simply
+never travelled to the second place the same trick was used.
+
+⚠️ **What kept it invisible was the data, not the code.** Every fixture was 8 or 24 bits wide.
+Both studied models are too -- MNIST 784x3 = 2352, JSC 16x8 = 128. Seventy-seven configurations
+across two datasets, every one bit-exact, and not one of them had a width off a byte boundary.
+No amount of running that suite harder would have found it.
+
+**So the fix that matters is the fixture, not the patch.** `odd_width` (6x3 = 18) now runs
+through both gate levels on every commit. Before it existed, reverting the patch broke nothing;
+now it breaks eight tests.
+
+The generalisation is uncomfortable and worth keeping: **"the tests pass" and "the tests
+exercise this" are different claims**, and a suite that grew alongside one shape of data will
+agree with itself indefinitely. The only thing that broke the tie here was deliberately building
+inputs nobody had built before.
+
+### 3.5 Comments compete with each other
 
 The cull was asked for as readability work. It turned up two references to things that do not
 exist in this repository -- a `jsc-complete` tag and "the training notebook" -- plus a
@@ -101,7 +141,7 @@ The rule applied everywhere was **keep what stops a bug, cut what tells a story*
 belong in these ledgers, which is what they are for. Nothing was deleted that is not recorded
 somewhere reachable.
 
-### 3.5 Governing files go stale silently
+### 3.6 Governing files go stale silently
 
 `CLAUDE.md` still said *"Cite that; do not reproduce it here"*, naming the outside repository,
 after the README had deliberately stopped naming it. Nothing enforces a file that instructs
@@ -112,9 +152,10 @@ that governs everyone's work.
 
 ## 4. What is not built, deliberately
 
-- **`dwn2rtl verify --simulator verilator`.** Declined; see §3.2 and the ledger's three triggers.
-  A user with only Verilator genuinely cannot verify today, and the fix for them is
-  `apt install iverilog`.
+- ~~**`dwn2rtl verify --simulator verilator`.** Declined; see §3.2 and the ledger's three
+  triggers.~~ ⚠️ **Built** (`phase6-ledger.md` §8). `Simulator` now owns its two commands, so
+  `_run_level` never knows which tool it drives; discovery prefers iverilog on the 39x
+  measurement; Linux and macOS only, and the docs say why not Windows.
 - **A restructured `argmax`.** The UNOPTFLAT warning is a measured false positive and costs
   nothing measurable; the waiver carries its reasoning.
 - **`--data`** (phase 4, unit 8 tier 2). Unchanged and still correct: it cannot be tested without
@@ -131,8 +172,13 @@ not need a backend, and is now had in CI. §6 is struck and points here.
 
 | | |
 |---|---|
-| commits | **19**, none changing what `build` emits |
-| tests | **246 passing**, 15 skipped |
+| commits | **29** |
+| tests | **298 passing**, 16 skipped |
+| wrong-input cases audited | **30**, of which **4** reached the user as a traceback |
+| defects found by the adversarial audit | **12**, one of them producing wrong output |
+| hostile inputs that behaved correctly | **60+** across the CLI, the reader and damaged output |
+| studied configurations that could have caught the vector bug | **0 of 77** |
+| decisions reversed by their own evidence | **2** -- the UNOPTFLAT fix, and the backend itself |
 | simulators agreeing on every vector | **2** |
 | defects found by the linter on its first day | **1**, invisible to the gate |
 | docstring claims disproved by their own control | **1** |

@@ -370,3 +370,95 @@ def test_out_pointing_at_a_file_is_refused_not_an_oserror(tmp_path):
 
     with pytest.raises(NotADirectoryError, match='is a file, not a directory'):
         build(fixtures.make('tiny'), str(target), input_bits=8)
+
+
+@pytest.mark.parametrize('width', [1, 3, 7, 8, 12, 15, 16, 18, 24, 31, 33])
+def test_binarized_vectors_survive_any_width(width):
+    """value = sum(row[i] << i), at every width -- not just the byte-aligned ones.
+
+    np.packbits pads a partial byte on the LOW side, which multiplied 12-bit vectors by 16 and
+    18-bit ones by 64 while leaving 8, 16 and 24 correct.
+    """
+    import numpy as np
+    from dwn2rtl.vectors import bits_to_hex
+
+    row = np.random.default_rng(width).integers(0, 2, size=width).astype(bool)
+    expected = sum(int(b) << i for i, b in enumerate(row))
+    assert int(bits_to_hex(row, width), 16) == expected
+
+
+def test_a_stale_input_scaling_is_removed_on_rebuild(tmp_path):
+    """⚠️ Every other emitted file is overwritten; this one is conditional, so it survived.
+
+    Building an unscaled model over a scaled one in the same directory left the PREVIOUS model's
+    mean and scale behind, and a user following them applies another model's transformation --
+    the design then runs at chance and looks healthy doing it.
+    """
+    import json
+
+    out = str(tmp_path / 'rtl')
+    scaled = fixtures.make('tiny')
+    n = scaled['thermometer']['thresholds'].shape[0]
+    scaled['scaler'] = {'mean': [7.0] * n, 'scale': [2.0] * n}
+    build(scaled, out, input_bits=8)
+
+    path = os.path.join(out, 'input_scaling.json')
+    assert json.load(open(path))['mean'] == [7.0] * n
+
+    r = build(fixtures.make('tiny'), out, input_bits=8)          # no scaler this time
+    assert not os.path.exists(path), 'the previous model\'s scaling survived the rebuild'
+    assert any('stale input_scaling.json' in w for w in r.warnings), \
+        'removing it silently is not enough -- the user has to know it was there'
+
+
+@pytest.mark.parametrize('run_name', [
+    'line one\nline two',            # escaped the // comment -> uncompilable Verilog
+    'caf\u00e9 \u65e5\u672c\u8a9e',  # crashed the BUILD with UnicodeEncodeError on cp1252
+    'x' * 5000,
+    '`define EVIL 1',
+    '',
+])
+def test_a_hostile_run_name_cannot_break_the_design(run_name, tmp_path):
+    """⚠️ run_name reaches a header comment and nothing else, so it must never be able to stop a
+    design compiling. A newline escaped the comment; non-ASCII killed the build outright."""
+    ck = fixtures.make('tiny')
+    ck['run_name'] = run_name
+    outdir = build(ck, str(tmp_path / 'rtl'), input_bits=8).outdir
+
+    core = open(os.path.join(outdir, 'dwn_core.v'), encoding='utf-8').read()
+    assert core.isascii(), 'emitted Verilog must stay ASCII'
+    assert '\n// run' in core
+    for line in core.splitlines():
+        assert len(line) < 200, 'a header line grew without bound'
+
+
+@pytest.mark.parametrize('results', [
+    {'final_acc': 'ninety'},
+    {'final_acc': None},
+    {'final_acc': 0.9, 'best_acc': [1, 2]},
+    {'final_acc': float('nan')},
+])
+def test_odd_results_metadata_cannot_break_the_build(results, tmp_path):
+    """`final_acc` was formatted with :.4f, so a string or None raised TypeError from a code
+    generator -- over a comment that no hardware depends on."""
+    ck = fixtures.make('tiny')
+    ck['results'] = results
+    outdir = build(ck, str(tmp_path / 'rtl'), input_bits=8).outdir
+    assert 'accuracy' in open(os.path.join(outdir, 'dwn_core.v'), encoding='utf-8').read()
+
+
+def test_public_arguments_name_the_argument_not_an_internal(tmp_path):
+    """Every one of these named a library internal before: a dict pipeline gave "'dict' object
+    has no attribute 'lut'", and a string n_random reached numpy as a UFuncTypeError."""
+    from dwn2rtl import Pipeline
+
+    ck = fixtures.make('tiny')
+    with pytest.raises(TypeError, match='must be a dwn2rtl.Pipeline'):
+        build(ck, str(tmp_path / 'a'), input_bits=8, pipeline={'enc': 1})
+    with pytest.raises(TypeError, match='n_random must be an int'):
+        build(ck, str(tmp_path / 'b'), input_bits=8, n_random='500')
+    with pytest.raises(ValueError, match='n_random must be >= 0'):
+        build(ck, str(tmp_path / 'c'), input_bits=8, n_random=-5)
+
+    # and the valid forms still work
+    assert build(ck, str(tmp_path / 'd'), input_bits=8, pipeline=Pipeline(enc=0)).outdir

@@ -70,6 +70,13 @@ def _thresholds_of(thermometer):
         t = thermometer
 
     t = _as_tensor(t, 'thermometer thresholds').detach().cpu().float()
+    # ⚠️ Caught here rather than downstream: a non-finite threshold makes the integer-width
+    # search unbounded, so the tool hangs instead of failing.
+    if not torch.isfinite(t).all():
+        bad = int((~torch.isfinite(t)).sum())
+        raise CheckpointError(
+            f'{bad} of {t.numel()} thermometer thresholds are NaN or infinite. A threshold is a '
+            'quantile of the training data, so this usually means the data had NaN in it.')
     if t.ndim != 2:
         raise CheckpointError(
             f'thermometer thresholds have shape {tuple(t.shape)}; expected 2-D '
@@ -273,8 +280,16 @@ def from_model(model, thermometer, run_name=None, results=None, scaler=None):
     This is the notebook path, and it is what hls4ml does. Everything except the class count is
     read from the tensors; the class count comes off GroupSum, which has no parameters.
     """
+    # ⚠️ Checked before anything touches it: a non-model gave "'str' object has no attribute
+    # 'state_dict'", which names an implementation detail rather than the argument.
+    if not callable(getattr(model, 'state_dict', None)):
+        raise CheckpointError(
+            f'from_model() expects a trained model, got a {type(model).__name__}. '
+            'It must be the module itself, not a path or a state_dict -- pass a path to '
+            'dwn2rtl.load() instead.')
+
     if thermometer is None:
-        raise _bare_state_dict_error(getattr(model, 'state_dict', dict)())
+        raise _bare_state_dict_error(model.state_dict())
 
     state_dict = {k: v.detach().cpu() for k, v in model.state_dict().items()}
     idx = _layer_indices(state_dict)
