@@ -688,7 +688,44 @@ as a coverage number that counts a subprocess as uncovered.
 **Result: 4 real holes closed, and every one of them was in code that 25 sections of auditing had
 already walked past.**
 
-## 27. What survived the audit
+## 27. Measured — the second sweep, and why a local mutation score under-reports
+
+The first sweep covered three modules; this one took the other four (`emit_core`,
+`emit_encoder`, `build`, `verify`) against the **full** suite. 19 mutants, 7 survivors -- and
+triaging them was more instructive than the count.
+
+| survivor | verdict |
+|---|---|
+| 3 in `emit_core` / `emit_encoder` | ⚠️ **not code** -- the sweep mutated prose inside docstrings and emitted comment strings |
+| `len(text) > MAX_COMMENT` -> `>=` | equivalent: truncates at 119 instead of 120 |
+| `width = max(len(left) ...)` -> `min` | report column alignment only |
+| GroupSum slice `(c + 1) * group - 1` -> `(c + 2)` | ⚠️ **killed by Verilator, not by pytest** -- see below |
+| `if n_random < 0` -> `<= 0` | ⚠️ **real**: `n_random=0` was never pinned as legitimate |
+
+### ⚠️ The slice mutant is the finding, and it is about the harness rather than the code
+
+`(c + 2) * group - 1` emits a popcount whose input slice is twice the port width. Verilog
+truncates a wide expression to the port from the MSB side, keeping the LSBs -- which are exactly
+the right bits -- so the design still **simulates correctly** and the gate passes. It is
+behaviourally equivalent and structurally wrong.
+
+Verilator says so immediately:
+
+```
+%Warning-WIDTHTRUNC: 'bits' expects 3 bits on the pin connection,
+                     but pin connection's SEL generates 6 bits.        exit 141
+```
+
+**So the mutant dies in CI and survives here**, because the `verilator`-marked tests skip on a
+machine without it. Two things follow:
+
+1. **A local mutation score is a lower bound.** The strictest checker in this project is not
+   installed on the primary development platform, so any sweep run here under-reports.
+2. **The linter earned its place again.** It is the only thing in the suite that catches a
+   design which is correct by simulation and wrong by construction -- the same category as the
+   pragma bug it found on its first day.
+
+## 28. What survived the audit
 
 Worth recording, because it is the larger half:
 

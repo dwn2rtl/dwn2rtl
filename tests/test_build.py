@@ -625,3 +625,17 @@ def test_generated_vectors_reach_the_edges_of_the_word(tmp_path):
 
     assert (lo & mask) in seen, 'no vector reaches the minimum word value'
     assert (hi & mask) in seen, 'no vector reaches the maximum word value'
+
+
+def test_no_random_vectors_is_allowed_and_still_emits_the_edge_cases(tmp_path):
+    """`n_random=0` is a legitimate request -- edge cases only, and they are the vectors that
+    actually pin behaviour. It was unpinned, so tightening the guard to `<= 0` would have
+    rejected it with nothing failing.
+    """
+    r = build(fixtures.make('tiny'), str(tmp_path / 'rtl'), input_bits=8, n_random=0)
+
+    assert r.vectors['top']['count'] > 0, 'the deliberate edge cases must still be there'
+    assert r.vectors['core']['count'] > 0
+
+    with pytest.raises(ValueError, match='n_random must be >= 0'):
+        build(fixtures.make('tiny'), str(tmp_path / 'neg'), input_bits=8, n_random=-1)

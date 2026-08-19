@@ -20,3 +20,9 @@ dist/
 *.vcd
 *.vvp
 a.out
+
+# coverage artefacts (pytest-cov). Data files, not source.
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
