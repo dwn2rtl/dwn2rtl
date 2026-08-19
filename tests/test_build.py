@@ -561,3 +561,67 @@ def test_the_gate_passes_at_awkward_feature_widths(n_features, input_bits, tmp_p
     r = build(ck, str(tmp_path / 'rtl'), input_bits=input_bits)
     report = verify(r.outdir)
     assert report.ok, '\n'.join(report.lines())
+
+
+@pytest.mark.parametrize('shape', ALL_SHAPES)
+def test_the_index_width_is_wide_enough_for_every_class(shape, tmp_path):
+    """⚠️ THE HOLE THIS PROJECT ALREADY PAID FOR ONCE, still open until mutation testing found it.
+
+    The ledger records a testbench that hardcoded IDX_W=3, checked a 10-class design on three of
+    its four index bits, and PASSED. The emitter now derives IDX_W -- but nothing checked the
+    derivation, and it cannot fail loudly: the testbench compares
+    `class_idx !== expected[j][IDX_W-1:0]`, truncating BOTH sides to the same wrong width, so a
+    too-narrow IDX_W silently weakens the gate instead of breaking it.
+
+    Mutating ceil to floor, or max to min, left the entire suite green.
+    """
+    import math
+    import re
+
+    ck = fixtures.make(shape)
+    k = ck['config']['num_classes']
+    outdir = build(ck, str(tmp_path / 'rtl'), input_bits=8).outdir
+
+    src = open(os.path.join(outdir, 'top_params.vh')).read()
+    idx_w = int(re.search(r'IDX_W (\d+)', src).group(1))
+
+    expected = max(1, math.ceil(math.log2(k)))
+    assert idx_w == expected, f'{k} classes need {expected} index bits, got {idx_w}'
+    assert k <= 2 ** idx_w, f'IDX_W={idx_w} cannot represent class {k - 1}'
+
+
+def test_a_healthy_model_is_not_reported_as_degenerate(tmp_path):
+    """The positive case was tested and the negative one was not, so the threshold could move
+    (`< 2` to `<= 2`) and nothing failed -- which would warn about every 2-class model."""
+    # ⚠️ A TWO-class model specifically. With ten classes the mutated threshold (`<= 2`) still
+    # would not fire, so the test would pass while proving nothing -- the boundary is at 2.
+    r = build(fixtures.make('tiny'), str(tmp_path / 'rtl'), input_bits=8)
+    assert r.vectors['top']['classes_hit'] == 2, 'this fixture must sit exactly on the boundary'
+    assert not any('ONE class' in w for w in r.warnings), r.warnings
+
+
+def test_generated_vectors_reach_the_edges_of_the_word(tmp_path):
+    """The saturation boundary is only exercised if a vector actually lands on it. Narrowing the
+    range by one (`2**(word-1) - 2`) left every test green while quietly dropping the edge case
+    the encoder's clamping is about."""
+    import numpy as np
+
+    ck = fixtures.make('tiny')
+    outdir = build(ck, str(tmp_path / 'rtl'), input_bits=8).outdir
+
+    from dwn2rtl.build import build as _b          # precision comes back on the report
+    r = _b(ck, str(tmp_path / 'rtl2'), input_bits=8)
+    word = r.precision.word_bits
+    lo, hi = -(2 ** (word - 1)), 2 ** (word - 1) - 1
+
+    rows = [int(v, 16) for v in
+            open(os.path.join(outdir, 'x_quant.hex')).read().split()]
+    mask = (1 << word) - 1
+    seen = set()
+    for packed in rows:
+        while packed:
+            seen.add(packed & mask)
+            packed >>= word
+
+    assert (lo & mask) in seen, 'no vector reaches the minimum word value'
+    assert (hi & mask) in seen, 'no vector reaches the maximum word value'

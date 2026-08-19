@@ -477,3 +477,24 @@ def test_levels_are_validated(tmp_path):
         verify(outdir, levels='core')
     with pytest.raises(ValueError, match='unknown level'):
         verify(outdir, levels=('core', 'topp'))
+
+
+def test_a_simulator_that_cannot_be_run_names_the_tool(tmp_path):
+    """⚠️ Discovery accepts a simulator that merely EXISTS -- a version probe is cosmetic and
+    must not cost a working install -- so an unrunnable one is only found when it is run. A bare
+    OSError there named a syscall ('[WinError 2] The system cannot find the file specified')
+    rather than the tool the user chose.
+    """
+    import fixtures
+    from dwn2rtl.build import build
+
+    outdir = build(fixtures.make('tiny'), str(tmp_path / 'rtl'), input_bits=8).outdir
+
+    stub = tmp_path / ('iverilog.exe' if os.name == 'nt' else 'iverilog')
+    stub.write_text('not an executable', encoding='utf-8')
+
+    report = verify(outdir, simulator=str(stub))
+    assert not report.ok
+    assert all(r.status == 'ERROR' for r in report.levels)
+    assert 'could not run' in report.levels[0].detail
+    assert str(stub) in report.levels[0].detail, 'the message must name the tool'

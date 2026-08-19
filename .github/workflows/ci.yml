@@ -35,7 +35,7 @@ jobs:
     strategy:
       fail-fast: false          # a Windows-only failure must not hide a Linux one, or vice versa
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-latest, windows-latest, macos-latest]
         python: ['3.12']
         include:
           # The floor declared in pyproject.toml. A supported version nothing ever runs on is a
@@ -101,6 +101,17 @@ jobs:
             iverilog yosys verilator
           iverilog -V | head -1
           yosys -V
+
+      # macOS was listed as supported from the first release and had never once run. A
+      # supported platform nothing executes on is a claim, not a fact -- the same reasoning that
+      # put the 3.10 floor in the matrix. Homebrew has iverilog; verilator and yosys are left to
+      # the Linux jobs, since one platform's coverage of the optional tools is enough.
+      - name: Install iverilog (macOS)
+        if: runner.os == 'macOS'
+        timeout-minutes: 20
+        run: |
+          brew install icarus-verilog
+          iverilog -V | head -1
 
       # winget is not available on GitHub's Windows runners; Chocolatey is preinstalled.
       #
@@ -238,6 +249,58 @@ jobs:
           PY
           dwn2rtl build ci-model.dwn --out ci-rtl --input-bits 8
           dwn2rtl verify ci-rtl
+
+  # ⚠️ THE DECLARED DEPENDENCY FLOORS, ACTUALLY INSTALLED. pyproject says numpy>=1.22 and
+  # torch>=2.0, and until this job existed both were claims: every run resolved to the newest
+  # release, so the oldest supported versions had never executed a line. Same reasoning as the
+  # 3.10 entry in the matrix above.
+  #
+  # Python 3.10 because it is the newest interpreter with real WHEELS for both floors. Checked
+  # rather than assumed: numpy 1.22 does resolve on 3.11, but only as an sdist that pip then
+  # compiles, which needs a toolchain and minutes. A floor job that spends its time building
+  # numpy is testing pip, not this package.
+  floors:
+    name: the declared dependency floors
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          cache: pip
+
+      - name: Install iverilog
+        timeout-minutes: 15
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          if [ -f /etc/apt/apt-mirrors.txt ]; then
+            echo 'https://archive.ubuntu.com/ubuntu/' | sudo tee /etc/apt/apt-mirrors.txt
+          fi
+          sudo apt-get update -o Acquire::http::Timeout=15 -o Acquire::https::Timeout=15
+          sudo apt-get install -y -o DPkg::Lock::Timeout=600 iverilog
+
+      # Installed, then pinned DOWN: `pip install -e .` resolves to the newest that satisfies
+      # >=, which is exactly the thing this job exists not to test.
+      - name: Install at the floors
+        run: |
+          pip install -e ".[dev]"
+          pip install "numpy==1.22.*" "torch==2.0.*"
+          python -c "import numpy, torch; print('numpy', numpy.__version__, '/ torch', torch.__version__)"
+
+      - name: The gate actually ran
+        run: |
+          python - <<'PY'
+          import sys
+          from dwn2rtl.verify import SimulatorNotFound, find_simulator
+          try:
+              print('simulator:', find_simulator().describe())
+          except SimulatorNotFound as e:
+              print('FATAL: no simulator in CI.\n', e); sys.exit(1)
+          PY
+
+      - run: pytest -q
 
   # The wheel is the thing users actually install, and a development install cannot check it:
   # `pip install -e` leaves the source tree in place, so files('dwn2rtl')/'rtl' resolves back

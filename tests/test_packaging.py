@@ -208,3 +208,51 @@ def test_a_read_only_output_file_is_an_error_not_a_traceback(tmp_path):
         assert r.stderr.startswith('dwn2rtl build:')
     finally:
         os.chmod(target, stat.S_IWRITE)
+
+
+@pytest.mark.sim
+def test_the_cli_verify_path_runs_end_to_end(tmp_path):
+    """⚠️ Coverage found this: the suite never ran `dwn2rtl verify` through main(). Only a CI
+    step did, so the most common user command had no test behind its success path."""
+    import subprocess
+    import sys
+
+    import dwn2rtl
+    import fixtures
+
+    model, therm = fixtures.make_live('tiny')
+    ck = tmp_path / 'm.dwn'
+    dwn2rtl.save(model, therm, str(ck))
+    out = str(tmp_path / 'rtl')
+
+    b = subprocess.run([sys.executable, '-m', 'dwn2rtl.cli', 'build', str(ck), '--out', out],
+                       capture_output=True, text=True, timeout=600)
+    assert b.returncode == 0, b.stderr
+    assert 'wrote' in b.stdout
+
+    v = subprocess.run([sys.executable, '-m', 'dwn2rtl.cli', 'verify', out],
+                       capture_output=True, text=True, timeout=600)
+    assert v.returncode == 0, v.stderr
+    assert 'RESULT   PASS' in v.stdout
+    assert v.stdout.isascii()
+
+
+@pytest.mark.sim
+def test_the_cli_exits_nonzero_when_the_gate_fails(tmp_path):
+    """A failing gate must be visible to a shell script, not just to a human reading stdout."""
+    import subprocess
+    import sys
+
+    import fixtures
+    from dwn2rtl.build import build
+
+    outdir = build(fixtures.make('tiny'), str(tmp_path / 'rtl'), input_bits=8).outdir
+    hexf = os.path.join(outdir, 'expected_top.hex')
+    lines = open(hexf).read().splitlines()
+    lines[0] = '7' if lines[0] != '7' else '6'                 # one wrong answer
+    open(hexf, 'w').write('\n'.join(lines) + '\n')
+
+    r = subprocess.run([sys.executable, '-m', 'dwn2rtl.cli', 'verify', outdir],
+                       capture_output=True, text=True, timeout=600)
+    assert r.returncode == 1, r.stdout
+    assert 'RESULT   FAIL' in r.stdout

@@ -43,6 +43,9 @@ gained real errors.
 | an `odd_width` fixture | 18 bits, so the gate drives the off-byte path on every commit |
 | metadata that cannot break a design | a newline in `run_name` emitted uncompilable Verilog |
 | a pipeline depth that means what it says | `pipe_reg` inserted one register for any count |
+| **a second implementation of the golden model** | the one failure the gate cannot detect |
+| macOS and the dependency floors in CI | both were supported in name only |
+| mutation testing | 6 holes that eight rounds of auditing had missed |
 
 ## 3. Findings that outlive this phase
 
@@ -173,10 +176,10 @@ not need a backend, and is now had in CI. §6 is struck and points here.
 
 | | |
 |---|---|
-| commits | **33** |
-| tests | **370 passing**, 16 skipped |
+| commits | **34** |
+| tests | **404 passing**, 16 skipped |
 | wrong-input cases audited | **30**, of which **4** reached the user as a traceback |
-| defects found by the adversarial audit | **21**, three of them producing a wrong result |
+| defects found by the adversarial audit | **28**, three of them producing a wrong result |
 | hostile inputs that behaved correctly | **60+** across the CLI, the reader and damaged output |
 | studied configurations that could have caught the vector bug | **0 of 77** |
 | decisions reversed by their own evidence | **2** -- the UNOPTFLAT fix, and the backend itself |

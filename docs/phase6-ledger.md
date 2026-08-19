@@ -539,7 +539,156 @@ Detectable exactly: a learnable mapping's `weights` is `(input_size, output_size
 first layer states how many bits it expects, and that must equal `features x z`. Now checked,
 naming the likely cause -- a model and thermometer from different training runs.
 
-## 23. What survived the audit
+## 23. 🎯 Built — the golden model now has a second implementation behind it
+
+**The one failure the gate cannot detect, closed.** `verify` proves the RTL matches
+`extract.forward()`. If that function were itself wrong, the RTL would match it perfectly and
+both would be wrong together -- and `verify.py`'s own docstring said the quiet part out loud:
+*"there is no second independent implementation to cross-check against."*
+
+Now there is. `tests/naive_reference.py` implements the forward pass and the encoder **from
+docs/checkpoint-format.md**, structured to share as little as possible with the original:
+explicit per-node loops and bit shifts where `extract.py` gathers and vectorises. Vectorised
+code and loop code fail differently, which is the whole point.
+
+Result across all six shapes, 200 samples each: **group sums identical, predicted classes
+identical, encoder bits identical.**
+
+⚠️ **Two things that make it evidence rather than decoration.**
+
+The tie-break is the subtlest rule in the model -- numpy, torch and the RTL all keep the LOWEST
+tied index -- so a comparison that never hits a tie says nothing about it. Measured rather than
+hoped:
+
+| shape | classes | vectors tying for top |
+|---|---|---|
+| tiny | 2 | 123 / 500 |
+| n6 | 3 | 210 / 500 |
+| odd_width | 3 | 243 / 500 |
+| ten_class | 10 | 271 / 500 |
+
+And the reference must be able to DISAGREE, or agreement proves nothing. A deliberately
+corrupted final-layer table makes the two diverge, and that is a test of its own.
+
+⚠️ **What it cannot do**, stated so nobody over-reads it: both implementations were written here,
+so a shared misreading of upstream's semantics would survive. That risk is managed separately by
+the pinned upstream commit and `docs/checkpoint-format.md`. What this catches is transcription
+error -- a reversed address, a wrong group boundary, an off-by-one table index -- which is the
+class the gate is structurally blind to.
+
+## 24. Built — coverage and mutation testing, which measure the TESTS rather than the tool
+
+Seven rounds of adversarial input had reached the point of finding only message quality, so the
+next step was to stop adding cases and start measuring whether the existing ones can fail.
+
+**Coverage** (branch-aware, 89%) found one real gap: the suite **never ran `dwn2rtl verify` or
+`estimate` through `main()`**. Only a CI step did, so the two commands users actually type had no
+test behind their success path. Everything else uncovered is either a defensive branch or the
+yosys path, which needs the tool installed.
+
+**Mutation testing found two holes that seven rounds of auditing had missed.** Ten deliberate
+breakages, each applied alone, with the suite run against it:
+
+| mutation | caught? |
+|---|---|
+| binarized hex: drop the byte padding | yes |
+| LUT address: reverse the bit order | yes |
+| `luts > 0.0` becomes `>= 0.0` | ⚠️ **NO** |
+| argmax: ties keep the highest index | yes |
+| `quantize`: floor becomes round | ⚠️ **NO** |
+| thresholds: floor becomes ceil | yes |
+| RTL argmax: `>` becomes `>=` | yes |
+| RTL lut_node: invert the address | yes |
+| RTL popcount: an equivalent rewrite | survived, correctly |
+| `required_int_bits`: off by one | yes |
+
+**Both survivors were places where the spec says something no test checked.**
+
+`extract.py`'s own comment claimed *"an exact 0.0 emits 0 -- unlikely in a trained model, but
+Gate 1 covers edge cases."* Gate 1 did not: fixtures draw uniform floats, which never land on
+exactly 0.0, so the strictness of `> 0` was never exercised.
+
+⚠️ And the quantiser's rounding mode is invisible to the gate **by construction** -- the RTL and
+the golden model both use that one function, so they agree whichever way it rounds. It still
+matters, because `input_scaling.json` tells the USER to quantise their own inputs, and a
+different mode puts boundary features on the wrong side of a comparator. Same shape as the
+missing-scaling finding: a specification choice the gate is structurally blind to.
+
+Both closed, and the mutants now die: **9 killed, 0 uncaught, 1 equivalent mutant correctly
+surviving.**
+
+## 25. 🎯 Found — the declared dependencies permit a combination that cannot work
+
+macOS was listed as supported from the first release and **had never once run**, and the floors
+`numpy>=1.22` / `torch>=2.0` had never been installed -- every CI run resolved to the newest
+release. Both are now jobs, on the ledger's own principle that a supported thing nothing
+executes on is a claim rather than a fact.
+
+Building the floor environment found a real defect immediately:
+
+```
+numpy 2.4.6 | torch 2.0.1  ->  209 failed
+RuntimeError: Numpy is not available
+```
+
+⚠️ **torch builds before ~2.3 were compiled against NumPy 1.x and cannot hand a tensor to NumPy
+2 at all.** Every emitter reads tensors through `.numpy()`, so the tool does not work -- and our
+metadata permits it: the two constraints are each satisfiable while being mutually incompatible,
+and pip resolves numpy to the newest release, so **anyone holding an older torch gets the broken
+pair by default.**
+
+**Measured before choosing a fix:** torch 2.0.1 with numpy 1.26 passes all 394 tests. So
+raising the torch floor would forbid a combination that works, to prevent one that pip produces
+by accident. Instead the broken pairing is detected once, at the entry points, and explained
+with both ways out:
+
+```
+this torch (2.0.1+cpu) cannot exchange arrays with this numpy (2.4.6): Numpy is not available
+  torch builds before ~2.3 were compiled against NumPy 1.x and cannot work with NumPy 2.
+  Fix either side:  pip install "numpy<2"   or   pip install -U torch
+```
+
+Verified end to end in a genuinely broken environment, on the path a real user takes -- saving a
+checkpoint from a healthy install and loading it from the broken one.
+
+## 26. 🎯 Found — a systematic mutation sweep reopened the bug this project already paid for
+
+Hand-picked mutants had stopped finding anything, so the next sweep was **generated rather than
+chosen**: flip every comparison, min/max, floor/ceil and off-by-one in the three
+correctness-critical modules, one at a time, and run the suite against each.
+
+⚠️ **The most important survivor is a bug the ledger already records once.** `phase1` documents a
+testbench that hardcoded `IDX_W=3`, checked a 10-class design on three of its four index bits,
+and **passed**. The emitter derives `IDX_W` now -- but nothing ever checked the derivation, and
+it cannot fail loudly:
+
+```verilog
+if (class_idx !== expected[j][`IDX_W-1:0])   // BOTH sides truncated to the same wrong width
+```
+
+A too-narrow `IDX_W` does not break the comparison, it **narrows** it. Mutating `ceil` to
+`floor` (4 bits to 3 on a ten-class model) or `max` to `min` (down to 1 bit) left the entire
+suite green. The fix is a test that pins `IDX_W == ceil(log2(K))` per shape, because the gate
+structurally cannot notice.
+
+**Three more survivors, all real:**
+
+| mutant | why it survived | now |
+|---|---|---|
+| the word range narrowed by one | vectors simply never reached the word's extremes, so the saturation boundary went unexercised | a test asserts both extremes appear in `x_quant.hex` |
+| `degenerate: classes < 2` -> `<= 2` | the positive case was tested and the negative one was not | a TWO-class model must not be flagged -- ten classes would not have killed it |
+| an error message's wording | genuinely equivalent | left alone |
+
+⚠️ **And the first re-check taught its own lesson.** Fifteen mutants "survived" the first pass
+because the fast test subset did not cover `vectors.py` at all. Re-running the candidates against
+the FULL suite separated four real holes from eleven artifacts of my own test selection. **A
+mutation score is only as meaningful as the tests you run against it** -- which is the same trap
+as a coverage number that counts a subprocess as uncovered.
+
+**Result: 4 real holes closed, and every one of them was in code that 25 sections of auditing had
+already walked past.**
+
+## 27. What survived the audit
 
 Worth recording, because it is the larger half:
 

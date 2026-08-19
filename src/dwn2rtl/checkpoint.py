@@ -41,6 +41,37 @@ class CheckpointError(ValueError):
 # Reading the two objects
 # ---------------------------------------------------------------------------------------
 
+_INTEROP_CHECKED = False
+
+
+def _check_torch_numpy_interop():
+    """⚠️ A torch built against NumPy 1.x cannot hand tensors to NumPy 2.x AT ALL.
+
+    Every emitter reads tensors through `.numpy()`, so that combination breaks this tool
+    completely -- with "Numpy is not available", which names neither package nor the fix.
+
+    It is a combination our own metadata permits: `numpy>=1.22` and `torch>=2.0` are each
+    satisfiable while being mutually incompatible, and pip resolves numpy to the newest release,
+    so anyone holding an older torch gets it by default. Forbidding it in metadata would also
+    forbid torch 2.0 with numpy 1.x, which works fine -- measured, 394 tests green. So the
+    broken pairing is detected instead, once, and explained.
+    """
+    global _INTEROP_CHECKED
+    if _INTEROP_CHECKED:
+        return
+    try:
+        torch.zeros(1).numpy()
+    except Exception as e:
+        raise CheckpointError(
+            f'this torch ({torch.__version__}) cannot exchange arrays with this numpy '
+            f'({np.__version__}): {e}\n'
+            '  torch builds before ~2.3 were compiled against NumPy 1.x and cannot work '
+            'with NumPy 2.\n'
+            '  Fix either side:  pip install "numpy<2"   or   pip install -U torch'
+        ) from e
+    _INTEROP_CHECKED = True
+
+
 def _as_tensor(x, what):
     if torch.is_tensor(x):
         return x
@@ -314,6 +345,7 @@ def from_model(model, thermometer, run_name=None, results=None, scaler=None):
     This is the notebook path, and it is what hls4ml does. Everything except the class count is
     read from the tensors; the class count comes off GroupSum, which has no parameters.
     """
+    _check_torch_numpy_interop()
     # ⚠️ Checked before anything touches it: a non-model gave "'str' object has no attribute
     # 'state_dict'", which names an implementation detail rather than the argument.
     if not callable(getattr(model, 'state_dict', None)):
@@ -357,6 +389,7 @@ def normalize(obj, source=None):
     generic "unrecognized mapping" case, or the most common user error gets the least useful
     message.
     """
+    _check_torch_numpy_interop()
     where = f' (from {source})' if source else ''
 
     # 1. Already ours -- the study's checkpoints land here unchanged.

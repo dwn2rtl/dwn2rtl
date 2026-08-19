@@ -449,3 +449,47 @@ def test_the_matching_thermometer_still_loads():
     """The guard must not reject the ordinary pairing."""
     ck = fixtures.make_checkpoint(n_features=4, z=2, n=2, layers=(12, 8), num_classes=2)
     assert normalize(ck)['config']['thermometer_bits'] == 2
+
+
+def test_a_torch_that_cannot_talk_to_numpy_is_explained(monkeypatch):
+    """⚠️ Our own metadata permits a combination that cannot work: `numpy>=1.22` and
+    `torch>=2.0` are each satisfiable while being mutually incompatible, because torch builds
+    before ~2.3 were compiled against NumPy 1.x. pip resolves numpy to the newest release, so
+    anyone holding an older torch gets the broken pair by default -- and every emitter reads
+    tensors through .numpy(), so the tool fails completely with "Numpy is not available", which
+    names neither package nor the fix.
+
+    Measured before choosing this fix: torch 2.0.1 with numpy 1.26 passes the whole suite, so
+    forbidding old torch in metadata would forbid something that works.
+    """
+    import dwn2rtl.checkpoint as cp
+
+    monkeypatch.setattr(cp, '_INTEROP_CHECKED', False)
+
+    class Exploding:
+        def numpy(self):
+            raise RuntimeError('Numpy is not available')
+
+    monkeypatch.setattr(cp.torch, 'zeros', lambda *a, **k: Exploding())
+
+    with pytest.raises(CheckpointError) as e:
+        cp._check_torch_numpy_interop()
+
+    msg = str(e.value)
+    assert 'numpy<2' in msg and 'pip install -U torch' in msg, 'it must give both ways out'
+    assert cp.torch.__version__ in msg, 'and name the versions actually installed'
+
+
+def test_the_interop_check_runs_once_and_then_gets_out_of_the_way(monkeypatch):
+    """It sits on the hot path of every load, so it must not probe torch every time."""
+    import dwn2rtl.checkpoint as cp
+
+    monkeypatch.setattr(cp, '_INTEROP_CHECKED', False)
+    calls = []
+    real = cp.torch.zeros
+    monkeypatch.setattr(cp.torch, 'zeros', lambda *a, **k: (calls.append(1), real(*a, **k))[1])
+
+    cp._check_torch_numpy_interop()
+    cp._check_torch_numpy_interop()
+    cp._check_torch_numpy_interop()
+    assert len(calls) == 1
