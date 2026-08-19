@@ -375,7 +375,21 @@ def load(path):
     config dict and, on the primary path, the model object itself -- none of which survive
     torch's tensor-only unpickler. It is the user's own file.
     """
-    obj = torch.load(path, map_location='cpu', weights_only=False)
+    try:
+        obj = torch.load(path, map_location='cpu', weights_only=False)
+    except FileNotFoundError:
+        raise                      # the CLI already reports this one well
+    except Exception as e:
+        # ⚠️ torch.load fails in many ways on a file that is not a checkpoint -- UnpicklingError,
+        # BadZipFile, EOFError, RuntimeError -- and every one of them reached the user as a raw
+        # traceback through torch's internals. Pointing the tool at the wrong file is the most
+        # ordinary mistake there is, so it gets an error like any other rejected shape.
+        raise CheckpointError(
+            f'{path} could not be read as a PyTorch checkpoint '
+            f'({type(e).__name__}: {e}).\n'
+            'Expected a file written by torch.save(). If this is a model you just trained:\n'
+            "    torch.save({'model': model, 'thermometer': thermometer}, 'model.pt')"
+        ) from e
     return normalize(obj, source=path)
 
 

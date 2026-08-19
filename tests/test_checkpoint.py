@@ -311,6 +311,35 @@ def test_the_upstream_pin_is_not_enforced_at_load_time():
     assert normalize(ck)['config']['n'] == 2
 
 
+def test_a_file_that_is_not_a_checkpoint_is_refused_not_a_traceback(tmp_path):
+    """Pointing the tool at the wrong file is the most ordinary mistake there is, and it used to
+    surface as a raw UnpicklingError from inside torch's internals.
+
+    The CLI only catches CheckpointError and FileNotFoundError, so anything else torch.load
+    raises reaches the user as a traceback.
+    """
+    from dwn2rtl.checkpoint import load
+
+    bogus = tmp_path / 'notacheckpoint.pt'
+    bogus.write_text('just some text', encoding='utf-8')
+
+    with pytest.raises(CheckpointError) as e:
+        load(str(bogus))
+
+    msg = str(e.value)
+    assert 'notacheckpoint.pt' in msg, 'the message must name the file'
+    assert 'torch.save' in msg, 'and say what a checkpoint is written by'
+
+
+def test_a_missing_file_still_raises_filenotfound(tmp_path):
+    """Deliberately NOT converted: the CLI already reports it well, and turning it into a
+    CheckpointError would say "could not be read as a checkpoint" about a file that is absent."""
+    from dwn2rtl.checkpoint import load
+
+    with pytest.raises(FileNotFoundError):
+        load(str(tmp_path / 'nope.pt'))
+
+
 def test_checkpoint_error_is_a_valueerror_not_a_systemexit():
     """A library that kills its caller's process from inside a function they merely imported is
     not usable from a notebook."""
