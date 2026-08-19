@@ -183,6 +183,7 @@ most of their cost.
 |---|---|
 | [`docs/user-guide.md`](https://github.com/dwn2rtl/dwn2rtl/blob/main/docs/user-guide.md) | **start here** — using it on your own model: saving, precision, integrating the RTL, troubleshooting |
 | [`docs/checkpoint-format.md`](https://github.com/dwn2rtl/dwn2rtl/blob/main/docs/checkpoint-format.md) | what the exporter reads, and why |
+| [`CHANGELOG.md`](https://github.com/dwn2rtl/dwn2rtl/blob/main/CHANGELOG.md) | what changed in each release, and whether you need to upgrade |
 | [`docs/overview.md`](https://github.com/dwn2rtl/dwn2rtl/blob/main/docs/overview.md) | what the tool is, how it installs, the build plan |
 
 ## Evidence
