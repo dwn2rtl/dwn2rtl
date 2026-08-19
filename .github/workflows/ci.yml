@@ -103,22 +103,15 @@ jobs:
           yosys -V
 
       # winget is not available on GitHub's Windows runners; Chocolatey is preinstalled.
-      # Whichever installer is used, note that it does NOT put iverilog on PATH -- see the
-      # phase 0 ledger. verify.py searches C:\iverilog\bin for exactly this reason, so the
-      # tool is being exercised the way a real user hits it rather than being handed a
-      # tidied-up environment.
-      # ⚠️ choco CAN EXIT 0 HAVING INSTALLED NOTHING -- observed, not theorised: a run reached
-      # "The gate actually ran" with no simulator anywhere, which means this step reported
-      # success. The community feed also rate-limits, and Actions runners share IPs, so a
-      # transient failure here is expected occasionally.
       #
-      # Retries ARE right here and were WRONG for the apt mirror above, which is worth keeping
-      # straight: a rate limit clears, so asking again works; an unreachable host does not, so
-      # asking again just multiplies the timeout.
+      # ⚠️ choco CAN EXIT 0 HAVING INSTALLED NOTHING, twice observed. The community feed
+      # rate-limits (runners share IPs) and has returned 503, and in both cases choco printed
+      # "Chocolatey installed 0/0 packages" and exited ZERO. Retries are right for a transient
+      # feed -- but they must key on whether iverilog is REACHABLE, never on the exit code, or
+      # the loop breaks after one attempt believing it succeeded. That is what happened.
       #
-      # The check afterwards is the same rule as the Linux "estimate tests can actually run"
-      # step -- an install that achieved nothing must fail AT THE INSTALL, naming where it
-      # looked, rather than surfacing three steps later as a mystery.
+      # An install that achieved nothing must fail AT THE INSTALL, naming where it looked,
+      # rather than surfacing three steps later as a missing simulator.
       #
       # ⚠️ It deliberately does NOT add iverilog to PATH. verify.py's fallback search IS the
       # Windows user's path (winget installs to C:\iverilog\bin and adds nothing to PATH), so
@@ -126,7 +119,7 @@ jobs:
       - name: Install iverilog (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
-        timeout-minutes: 15
+        timeout-minutes: 20
         run: |
           # ⚠️ Exit codes are managed by hand here. GitHub runs pwsh with
           # $ErrorActionPreference='stop', and PowerShell 7.3+ can turn a native command's
@@ -135,30 +128,36 @@ jobs:
           $ErrorActionPreference = 'Continue'
           $PSNativeCommandUseErrorActionPreference = $false
 
-          for ($i = 1; $i -le 3; $i++) {
+          # Ask the question verify.py asks, in its order: PATH first, then the installer
+          # directories. Chocolatey writes SHIMS into C:\ProgramData\chocolatey\bin (on PATH)
+          # rather than using the winget layout, so a directory-only check fails a working
+          # install -- that happened once already.
+          function Find-Iverilog {
+            $onPath = (Get-Command iverilog -ErrorAction SilentlyContinue).Source
+            if ($onPath) { return $onPath }
+            @('C:\iverilog\bin',
+              'C:\Program Files\iverilog\bin',
+              'C:\Program Files (x86)\iverilog\bin') |
+              ForEach-Object { Join-Path $_ 'iverilog.exe' } |
+              Where-Object { Test-Path $_ } | Select-Object -First 1
+          }
+
+          # ⚠️ RETRY ON REACHABILITY, NEVER ON EXIT CODE. `choco install` printed
+          # "Chocolatey installed 0/0 packages" and exited 0 when the community feed returned
+          # 503, so a loop keyed on $LASTEXITCODE broke out after one attempt and treated a
+          # failed install as success. The feed being briefly unavailable is exactly what these
+          # retries are for, so the loop asks the only question that matters: is it there yet?
+          $exe = Find-Iverilog
+          for ($i = 1; $i -le 3 -and -not $exe; $i++) {
             choco install iverilog --no-progress -y
-            if ($LASTEXITCODE -eq 0) { break }
-            Write-Host "choco attempt $i exited $LASTEXITCODE; retrying"
-            Start-Sleep -Seconds 20
+            $exe = Find-Iverilog
+            if ($exe) { break }
+            Write-Host "attempt ${i}: choco exited $LASTEXITCODE and no iverilog is reachable"
+            if ($i -lt 3) { Start-Sleep -Seconds 45 }
           }
-          # ⚠️ ~~Test-Path against C:\iverilog\bin and the two Program Files variants~~ --
-          # WITHDRAWN, and it failed a WORKING install. Chocolatey uses neither: it unpacks to
-          # C:\ProgramData\chocolatey\lib\iverilog\tools and writes SHIMS into
-          # C:\ProgramData\chocolatey\bin, which is already on PATH. That is why Windows CI was
-          # green for dozens of commits before this check existed.
-          #
-          # So ask the question verify.py asks, in its order -- PATH first, then the installer
-          # directories -- rather than maintaining a second, wronger copy of the search.
-          $exe = (Get-Command iverilog -ErrorAction SilentlyContinue).Source
+
           if (-not $exe) {
-            $dirs = @('C:\iverilog\bin',
-                      'C:\Program Files\iverilog\bin',
-                      'C:\Program Files (x86)\iverilog\bin')
-            $exe = $dirs | ForEach-Object { Join-Path $_ 'iverilog.exe' } |
-                   Where-Object { Test-Path $_ } | Select-Object -First 1
-          }
-          if (-not $exe) {
-            Write-Host 'FATAL: choco reported success but no iverilog is reachable.'
+            Write-Host 'FATAL: no iverilog after 3 attempts. The gate cannot run.'
             Write-Host '--- what chocolatey thinks it installed ---'
             try { choco list } catch { Write-Host "(choco list failed: $_)" }
             Write-Host '--- PATH ---'
