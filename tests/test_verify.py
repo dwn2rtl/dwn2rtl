@@ -498,3 +498,88 @@ def test_a_simulator_that_cannot_be_run_names_the_tool(tmp_path):
     assert all(r.status == 'ERROR' for r in report.levels)
     assert 'could not run' in report.levels[0].detail
     assert str(stub) in report.levels[0].detail, 'the message must name the tool'
+
+
+# ---------------------------------------------------------------------------------------
+# STALE DIRECTORIES -- the one thing a green testbench cannot tell you
+# ---------------------------------------------------------------------------------------
+
+def _rebuild_rtl_only(ck, outdir, **kw):
+    """Rebuild into an existing directory, interrupted after the RTL and before the vectors.
+
+    A disk error, a Ctrl-C or a checkpoint that fails late all leave this state.
+    """
+    import dwn2rtl.build as B
+
+    original, B.generate = B.generate, _boom
+    try:
+        build(ck, outdir, **kw)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        B.generate = original
+
+
+def _boom(*a, **k):
+    raise KeyboardInterrupt('interrupted during vector generation')
+
+
+def test_a_directory_whose_halves_came_from_different_builds_is_refused(tmp_path):
+    """⚠️ phase8-ledger.md §5. build() writes RTL in steps 1-2 and vectors in step 3, and
+    nothing tied the two together. An 11-bit encoder against 9-bit vectors reported RESULT
+    PASS on both levels -- a faithful check of the wrong pairing.
+
+    This is the CLAUDE.md invariant: vectors and RTL must derive from the same checkpoint, or
+    the testbench passes against wrong RTL.
+    """
+    ck = fixtures.make('tiny')
+    outdir = str(tmp_path / 'rtl')
+    build(ck, outdir, input_bits=8)
+    _rebuild_rtl_only(ck, outdir, input_bits=10)
+
+    report = verify(outdir)
+    assert not report.ok
+    assert all(r.status == 'ERROR' for r in report.levels)
+    assert 'DIFFERENT builds' in report.levels[0].detail
+    # It has to say WHICH half is stale, or the user cannot act on it.
+    assert 'dwn_core_params.vh' in report.levels[0].detail
+    assert 'vec_params.vh' in report.levels[0].detail
+
+
+def test_a_consistent_directory_is_not_flagged(tmp_path):
+    """The other half of the pair -- the check must not fire on an ordinary build."""
+    from dwn2rtl.verify import stale_build
+
+    outdir = build(fixtures.make('tiny'), str(tmp_path / 'rtl'), input_bits=8).outdir
+    assert stale_build(outdir) is None
+
+
+def test_more_vectors_is_not_a_stale_directory(tmp_path):
+    """⚠️ n_random and seed are deliberately outside the digest. They change WHICH vectors get
+    generated, not whether the vectors and the RTL agree about the model -- folding them in
+    would flag a legitimate rebuild.
+    """
+    from dwn2rtl.verify import stale_build
+
+    ck = fixtures.make('tiny')
+    outdir = str(tmp_path / 'rtl')
+    build(ck, outdir, input_bits=8, n_random=8)
+    build(ck, outdir, input_bits=8, n_random=40)
+    assert stale_build(outdir) is None
+
+
+def test_an_unstamped_directory_still_verifies(tmp_path):
+    """Backward compatibility, in the direction that fails safe: a `.vh` written before 0.3.0
+    carries no stamp, and an absent stamp is not evidence of a mismatch. Mixing tool versions
+    is what the per-file version stamp exists to make diagnosable.
+    """
+    from dwn2rtl.verify import stale_build
+
+    outdir = build(fixtures.make('tiny'), str(tmp_path / 'rtl'), input_bits=8).outdir
+    for name in ('dwn_core_params.vh', 'dwn_top_params.vh', 'vec_params.vh', 'top_params.vh'):
+        path = os.path.join(outdir, name)
+        kept = [ln for ln in open(path).read().splitlines() if 'DWN_BUILD_ID' not in ln]
+        open(path, 'w').write('\n'.join(kept) + '\n')
+
+    assert stale_build(outdir) is None
+    assert verify(outdir).ok
