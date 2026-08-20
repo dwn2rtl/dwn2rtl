@@ -34,7 +34,8 @@ def bits_to_hex(row, width):
     (docs/checkpoint-format.md §2). Reversing this produces vectors that are wrong in exactly
     the way a reversed address concatenation is, which makes the two bugs mask each other.
     """
-    assert row.size == width
+    if row.size != width:
+        raise ValueError(f'row is {row.size} bits, expected {width}')
     # ⚠️ PAD TO A WHOLE BYTE FIRST. np.packbits pads a partial byte on the LOW side, so a width
     # that is not a multiple of 8 came out shifted LEFT by the padding -- 12 bits multiplied by
     # 16, 18 bits by 64 -- while 8, 16 and 24 were correct. Every fixture and both studied
@@ -61,6 +62,16 @@ def words_to_hex(words, word_bits):
 def write_lines(path, lines):
     with open(path, 'w') as f:
         f.write('\n'.join(lines) + '\n')
+
+
+def _build_id_define(build_id):
+    """The build stamp, as zero or one extra `.vh` line.
+
+    ⚠️ The vectors' half of the tie between RTL and vectors -- see build.build_id(). Both
+    parameter files get it, because the two levels are compiled separately and either one can
+    be the stale half.
+    """
+    return [f'`define DWN_BUILD_ID "{build_id}"'] if build_id else []
 
 
 def _core_vectors(width, rng, n_random):
@@ -126,7 +137,8 @@ def _top_vectors(thr_q, used, z, n_features, precision, rng, n_random):
     return np.concatenate([edge_q, rand_q]), edge_q.shape[0], names, (lo, hi)
 
 
-def generate(ck, layers, outdir, precision, n_random=N_RANDOM, seed=SEED):
+def generate(ck, layers, outdir, precision, n_random=N_RANDOM, seed=SEED,
+             build_id=None):
     """Write both levels' vectors and their `.vh` parameter files.
 
     `layers` is the extracted model -- passed in rather than re-extracted, so the vectors are
@@ -158,7 +170,7 @@ def generate(ck, layers, outdir, precision, n_random=N_RANDOM, seed=SEED):
         # comparison above eight: a 10-class design was checked on 3 of its 4 index bits, and
         # passed. Derived, never written down.
         f'`define IDX_W {idx_w}',
-    ])
+    ] + _build_id_define(build_id))
 
     # ---------------- top level ----------------
     thr_q = quantize_thresholds(thresholds, precision.frac_bits)
@@ -182,7 +194,7 @@ def generate(ck, layers, outdir, precision, n_random=N_RANDOM, seed=SEED):
         f'`define N_TOP {xq_all.shape[0]}',
         f'`define X_W {n_features * precision.word_bits}',
         f'`define IDX_W {idx_w}',
-    ])
+    ] + _build_id_define(build_id))
 
     # A design whose vectors all land on one class proves very little, and it is a plausible
     # outcome of a bad export rather than an exotic one -- a broken wiring can collapse every

@@ -29,6 +29,20 @@ PIPE_OUT = 1
 MAX_COMMENT = 120
 
 
+class EmitterMismatch(ValueError):
+    """The emitted file does not say what the checkpoint says.
+
+    ⚠️ AN EXCEPTION, NOT AN `assert`, AND THAT IS THE WHOLE POINT. Every read-back check in
+    both emitters used to be `assert`, which `python -O` deletes -- so under `-O` a build with
+    a reversed address concatenation on disk completed successfully and reported nothing
+    (phase8-ledger.md §4). The one check written to catch this project's named worst-case bug
+    was removable by a runtime flag nobody thinks about.
+
+    ValueError, so callers that already catch the emitters' bad-input errors keep working, and
+    the CLI reports it as a sentence rather than a traceback.
+    """
+
+
 def generated_header(suffix='by hand'):
     """The first line of every emitted file, carrying the version that wrote it.
 
@@ -72,7 +86,12 @@ def accuracy_line(results, label='accuracy   '):
     ⚠️ `final_acc` is formatted with :.4f, so a string, None or a list raised TypeError from a
     code generator -- over a comment. Numbers are formatted; anything else is reported as it is.
     """
-    if 'final_acc' not in (results or {}):
+    results = results or {}
+    if 'unrecognized' in results and 'final_acc' not in results:
+        # Recorded, but not as anything readable -- which is a different fact from absent.
+        return (f'// {label}: the results field is a '
+                f'{comment_safe(results["unrecognized"])}, not a mapping; nothing to read')
+    if 'final_acc' not in results:
         return f'// {label}: not recorded in the checkpoint'
 
     def num(v):
@@ -99,20 +118,22 @@ def table_to_hex(row):
     return v
 
 
-MAX_N = 6      # one LUT6 holds 2**6 entries; see the assertion in emit()
+MAX_N = 6      # one LUT6 holds 2**6 entries; see the check in emit()
 
 
-def emit(ck, out_path, pipe_lut=PIPE_LUT, pipe_pop=PIPE_POP, pipe_out=PIPE_OUT):
+def emit(ck, out_path, pipe_lut=PIPE_LUT, pipe_pop=PIPE_POP, pipe_out=PIPE_OUT,
+         build_id=None):
     cfg = ck['config']
     n, num_classes = cfg['n'], cfg['num_classes']
 
     # ⚠️ n > 6 overflows the 64-bit TABLE parameter and Verilog truncates it silently. Widening
     # it is not a width change: one node would stop being one LUT6.
-    assert n <= MAX_N, (
-        f'n={n} exceeds MAX_N={MAX_N}. A {2**n}-entry table does not fit the 64-bit TABLE '
-        f'parameter and would be silently truncated. Supporting it requires changing '
-        f'rtl/lut_node.v, this emitter and verify_emitted together -- and one node would no '
-        f'longer map to one LUT6, which is the premise the whole approach rests on.')
+    if n > MAX_N:
+        raise ValueError(
+            f'n={n} exceeds MAX_N={MAX_N}. A {2**n}-entry table does not fit the 64-bit TABLE '
+            f'parameter and would be silently truncated. Supporting it requires changing '
+            f'rtl/lut_node.v, this emitter and verify_emitted together -- and one node would no '
+            f'longer map to one LUT6, which is the premise the whole approach rests on.')
     sd = ck['state_dict']
 
     layers = []
@@ -224,6 +245,9 @@ def emit(ck, out_path, pipe_lut=PIPE_LUT, pipe_pop=PIPE_POP, pipe_out=PIPE_OUT):
         f.write(f'`define DWN_CORE_PIPE_LUT {pipe_lut}\n')
         f.write(f'`define DWN_CORE_PIPE_POP {pipe_pop}\n')
         f.write(f'`define DWN_CORE_PIPE_OUT {pipe_out}\n')
+        # Ties this file to the vectors written by the same build -- see build.build_id().
+        if build_id:
+            f.write(f'`define DWN_BUILD_ID "{build_id}"\n')
 
     return layers, input_bits, group, score_w, core_latency
 
@@ -249,36 +273,41 @@ def verify_emitted(path, layers, n):
         tables, wiring, _ = layers[li]
 
         expect_hex = f'{table_to_hex(tables[j]):016X}'
-        assert tbl_hex == expect_hex, (
-            f'layer {li} node {j}: table {tbl_hex} != expected {expect_hex}')
+        if tbl_hex != expect_hex:
+            raise EmitterMismatch(
+                f'layer {li} node {j}: table {tbl_hex} != expected {expect_hex}')
 
         idx = [int(x) for x in re.findall(r'\[(\d+)\]', m.group(4))]
         # emitted MSB-first, so reversing recovers slot order (slot 0 first)
-        assert idx[::-1] == wiring[j].tolist(), (
-            f'layer {li} node {j}: wiring {idx[::-1]} != expected {wiring[j].tolist()} '
-            '-- address bit order is wrong')
+        if idx[::-1] != wiring[j].tolist():
+            raise EmitterMismatch(
+                f'layer {li} node {j}: wiring {idx[::-1]} != expected {wiring[j].tolist()} '
+                '-- address bit order is wrong')
         seen += 1
 
     total = sum(t.shape[0] for t, _, _ in layers)
-    assert seen == total, f'parsed {seen} nodes, expected {total}'
+    if seen != total:
+        raise EmitterMismatch(f'parsed {seen} nodes, expected {total}')
     return seen
 
 
-def build_core(ck, outdir, pipeline=None):
+def build_core(ck, outdir, pipeline=None, build_id=None):
     """Emit dwn_core.v + dwn_core_params.vh, then read them back and check.
 
     Replaces the study's argparse `main()`. Returns a dict the caller can report from --
     nothing is printed here, because a library that prints is a library you cannot call twice.
 
-    Raises AssertionError if the read-back disagrees with the checkpoint. That is deliberate:
-    an emitter that half-succeeded should not leave a file on disk anyone might synthesize.
+    Raises EmitterMismatch if the read-back disagrees with the checkpoint. That is deliberate:
+    an emitter that half-succeeded should not leave a file on disk anyone might synthesize --
+    and it is an exception rather than an `assert` because `python -O` deletes asserts, which
+    made this promise false under a flag nobody thinks about (phase8-ledger.md §4).
     """
     from .config import Pipeline
     pipeline = pipeline or Pipeline()
 
     out_path = os.path.join(outdir, 'dwn_core.v')
     layers, input_bits, group, score_w, core_latency = emit(
-        ck, out_path, pipeline.lut, pipeline.pop, pipeline.out)
+        ck, out_path, pipeline.lut, pipeline.pop, pipeline.out, build_id=build_id)
 
     total = sum(t.shape[0] for t, _, _ in layers)
     seen = verify_emitted(out_path, layers, ck['config']['n'])

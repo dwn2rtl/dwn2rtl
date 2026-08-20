@@ -49,6 +49,17 @@ LEVELS = {
 DESIGN_SOURCES = ('dwn_top.v', 'dwn_core.v', 'thermometer_encoder.v',
                   'lut_node.v', 'popcount.v', 'argmax.v', 'pipe_reg.v')
 
+# Which parameter files carry the build stamp, and which half of the directory each one is.
+# ⚠️ Both halves must be listed. The whole failure this catches is one half being older than
+# the other, so a check that only read the RTL's files could never see it.
+_STAMPED = {
+    'dwn_core_params.vh': 'RTL',
+    'dwn_top_params.vh': 'RTL',
+    'vec_params.vh': 'vectors',
+    'top_params.vh': 'vectors',
+}
+_BUILD_ID = re.compile(r'`define\s+DWN_BUILD_ID\s+"([0-9a-f]+)"')
+
 _RESULT = re.compile(r'RESULT\s*:\s*(PASS|FAIL)')
 _VECTORS = re.compile(r'vectors tested\s*:\s*(\d+)')
 _MISMATCHES = re.compile(r'mismatches\s*:\s*(\d+)')
@@ -174,7 +185,12 @@ def find_simulator(simulator=None, iverilog=None):
         'no Verilog simulator found. Searched:\n'
         + '\n'.join(f'  {s}' for s in searched)
         + '\n\n  Install Icarus Verilog:\n'
-          '    Windows  winget install Icarus.Verilog   (then add C:\iverilog\bin to PATH)\n'
+          # ⚠️ RAW. `'C:\\iverilog'` in a normal string is an invalid escape sequence, which
+          # Python warns about on every import and will one day make a SyntaxError -- and it
+          # is the same class of defect as the `\v` that turned `scripts\verify` into a
+          # vertical tab, which CLAUDE.md records as a Windows-only scar.
+          r'    Windows  winget install Icarus.Verilog   (then add C:\iverilog\bin to PATH)'
+          '\n'
           '    Debian   apt install iverilog\n'
           '    macOS    brew install icarus-verilog\n'
           '  Verilator also works on Linux and macOS; pass --simulator verilator.\n'
@@ -231,6 +247,46 @@ class VerifyReport:
                        'thermometer encoder')
         out.append('RESULT   ' + ('PASS' if self.ok else 'FAIL'))
         return out
+
+
+def stale_build(outdir):
+    """A sentence if the RTL and the vectors came from different builds, else None.
+
+    ⚠️ THE ONE THING A GREEN TESTBENCH CANNOT TELL YOU. `build` writes RTL in two steps and
+    vectors in a third; interrupt between them and the directory holds new RTL beside old
+    vectors. Both compile, both run, and the answer means nothing -- one such directory (an
+    11-bit encoder against 9-bit vectors) reported RESULT PASS on both levels
+    (phase8-ledger.md §5). Nothing in the simulation can see it, because the testbench is a
+    faithful check of the wrong pairing.
+
+    Every generated `.vh` carries a digest of the checkpoint, precision and pipeline it came
+    from, so disagreement is a fact rather than an inference.
+
+    ⚠️ A file with NO stamp is not evidence of anything -- it was written before 0.3.0, or by
+    hand -- so it is skipped rather than treated as a mismatch. That is the compatible
+    direction to be wrong in: an old directory keeps working, and the version stamp on every
+    generated file is what makes mixing versions diagnosable.
+    """
+    seen = {}
+    for name, half in _STAMPED.items():
+        path = os.path.join(outdir, name)
+        if not os.path.exists(path):
+            continue
+        try:
+            m = _BUILD_ID.search(open(path).read())
+        except OSError:
+            continue
+        if m:
+            seen.setdefault(m.group(1), []).append(f'{name} ({half})')
+
+    if len(seen) < 2:
+        return None
+    groups = '; '.join(f'{bid[:8]}... from {", ".join(sorted(files_))}'
+                       for bid, files_ in sorted(seen.items()))
+    return ('the RTL and the vectors in this directory came from DIFFERENT builds, so a PASS '
+            'here would mean nothing -- the testbench would be checking correct hardware '
+            f'against another model\'s answers. Found {len(seen)} build stamps: {groups}. '
+            'Re-run `dwn2rtl build` on the whole directory.')
 
 
 def _run_level(sim, outdir, level, timeout):
@@ -323,5 +379,13 @@ def verify(outdir, levels=('core', 'top'), simulator=None, timeout=600, iverilog
         raise ValueError(f'unknown level(s) {unknown}; expected any of {sorted(LEVELS)}')
 
     sim = find_simulator(simulator, iverilog)
+
+    # ⚠️ Before a single vector runs. A mixed directory is not a design that failed -- it is a
+    # question the gate cannot answer, so it must not be given the chance to answer it wrongly.
+    stale = stale_build(outdir)
+    if stale:
+        return VerifyReport(outdir, sim,
+                            [LevelResult(lv, 'ERROR', detail=stale) for lv in levels])
+
     return VerifyReport(outdir, sim,
                         [_run_level(sim, outdir, lv, timeout) for lv in levels])
