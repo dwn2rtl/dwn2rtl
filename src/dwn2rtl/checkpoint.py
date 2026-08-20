@@ -162,6 +162,29 @@ def _scaler_of(obj, n_features):
     return {'mean': mean.tolist(), 'scale': scale.tolist()}
 
 
+def _results_of(raw):
+    """Whatever the checkpoint holds under 'results' -> a dict. Never raises.
+
+    ⚠️ `dict(obj.get('results') or {})` was the whole implementation, and a `results` that is
+    not a mapping made it throw from inside the loader: `results=5` gave the user a raw
+    TypeError traceback ('int' object is not iterable), and the CLI does not catch TypeError
+    (phase8-ledger.md §7).
+
+    Results reach one comment line in the emitted header and nothing else, so the rule from
+    phase6-ledger.md §14 applies whole: METADATA MUST NEVER BE ABLE TO BREAK A DESIGN. §14
+    enforced it for a bad value INSIDE the dict; this is one step upstream, where the dict
+    itself is not one.
+
+    Unrecognized rather than dropped, mirroring _scaler_of: the header then says the accuracy
+    was unusable instead of claiming nobody recorded it, which are different facts.
+    """
+    if raw is None:
+        return {}
+    if isinstance(raw, Mapping):
+        return dict(raw)
+    return {'unrecognized': type(raw).__name__}
+
+
 def _looks_like_a_state_dict(obj):
     """A mapping of tensors keyed `<layer>.<param>` -- i.e. what torch.save(m.state_dict()) makes."""
     if not isinstance(obj, Mapping) or not obj:
@@ -374,7 +397,7 @@ def from_model(model, thermometer, run_name=None, results=None, scaler=None):
         },
         'state_dict': state_dict,
         'thermometer': {'thresholds': thr},
-        'results': dict(results or {}),
+        'results': _results_of(results),
         'run_name': run_name or 'unnamed',
         'scaler': _scaler_of({'scaler': scaler}, int(thr.shape[0])) if scaler is not None
         else None,
@@ -402,7 +425,7 @@ def normalize(obj, source=None):
             'thermometer': {'thresholds': _thresholds_of(obj['thermometer'])},
             # Guaranteed present so downstream never needs a defensive .get(). Absent means
             # "not recorded", which is different from zero and must print differently.
-            'results': dict(obj.get('results') or {}),
+            'results': _results_of(obj.get('results')),
             'run_name': obj.get('run_name') or 'unnamed',
             # Part of the input contract -- see _scaler_of. None when training used raw
             # features, which is itself a fact worth carrying rather than an absence.
