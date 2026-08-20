@@ -492,7 +492,13 @@ scikit-learn substitutes 1.0 rather than 0). A negative scale is still accepted 
 sign, which is unusual but perfectly followable. And the emitted file is now checked to parse
 under a strict reader, not merely under Python's.
 
-## 20. Measured — the `input_bits` axis is clean, and the reason is worth keeping
+## 20. Measured — ~~the `input_bits` axis is clean~~, and the reason is worth keeping
+
+> ⚠️ **Headline narrowed on 2026-08-19.** What was measured below is `quantize_thresholds`'
+> multiply, and that result stands exactly as written. It is not the whole axis: `quantize()`'s
+> `np.clip` was never checked, and it corrupts saturation from about a 55-bit word upward — at
+> 64 bits a saturating input comes out with its sign flipped. `phase8-ledger.md` §3. The section
+> below is a correct measurement under a headline that claimed more ground than it covered.
 
 Tests only ever used `input_bits=8`, so the axis got the same treatment as the byte-boundary
 one. **Every width from 1 to 63 builds and passes the gate**, and 64 is refused at the boundary
@@ -538,6 +544,12 @@ features would reveal it, by landing in the wrong bit positions.
 Detectable exactly: a learnable mapping's `weights` is `(input_size, output_size * n)`, so the
 first layer states how many bits it expects, and that must equal `features x z`. Now checked,
 naming the likely cause -- a model and thermometer from different training runs.
+
+> ⚠️ **~~Now checked~~ — half of it was, corrected 2026-08-19.** The mechanism above only exists
+> for a *learnable* first layer; a fixed mapping states nothing about its input width, so the
+> same wrong thermometer still builds clean and still gates PASS on both levels. The diagnosis
+> here is right and the fix works — it was scoped to the representation that made detection easy,
+> and the other half was not recorded as remaining. `phase8-ledger.md` §2.
 
 ## 23. 🎯 Built — the golden model now has a second implementation behind it
 

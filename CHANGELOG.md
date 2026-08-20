@@ -1,5 +1,60 @@
 # Changelog
 
+## Unreleased
+
+⚠️ **Two of these are silent-wrong fixes.** A model whose first layer has a fixed mapping could
+be built against a thermometer from a different training run -- clean build, `PASS` on both
+levels, real features in the wrong bit positions. And a directory holding RTL from one build
+beside vectors from another could report `PASS`, which is a check of the wrong pairing rather
+than a check of your design.
+
+Full record in `docs/phase8-ledger.md`; the retrospective is `docs/phase8-report.md`.
+
+### Fixed
+
+- **A design with more than 256 classes failed its own gate while being bit-exact.** Both
+  testbenches stored the golden answer in a `reg [7:0]` and then sliced it to the index width,
+  so at `IDX_W = 9` the part-select read past the end of the reg and returned `x` -- and `!==`
+  is strict about `x`, so *every* vector mismatched. 256 classes passed; 257 failed 100%. Every
+  class count anywhere in the test suite was 2, 3 or 10.
+- **A mismatched thermometer was only detected for a learnable first layer.** A learnable
+  mapping's `weights` states the input width it expects; a fixed mapping is a list of indices
+  and states nothing, so the existing check could not run. Exact detection is impossible from
+  the checkpoint alone, so `build` now reports the signature -- trailing features driving no
+  comparator -- and names the likely cause. A warning, not a refusal: a lopsided model looks the
+  same.
+- **`verify` accepted a directory whose RTL and vectors came from different builds.** An
+  interrupted rebuild leaves exactly that, and one such directory -- an 11-bit encoder against
+  9-bit vectors -- reported `RESULT PASS`. Every generated `.vh` now carries a digest of the
+  checkpoint, precision and pipeline it came from, and `verify` refuses a directory holding more
+  than one before it compiles anything.
+- **`quantize()` saturated to the wrong value at wide words.** The clip ran in float64, where
+  `2**63 - 1` is not representable, so at a 64-bit word an input that should have saturated to
+  `+9223372036854775807` came out as `-9223372036854775808` -- a sign flip. Wrong from about a
+  55-bit word up, reachable via `--input-bits 62`. `build` never calls this function; the user
+  guide and `input_scaling.json` tell *you* to.
+- **A NaN feature became an extremely negative one.** `quantize()` now refuses it: every
+  comparison against NaN is False, so it saturated in neither direction and fell through to
+  int64's minimum. Infinities still saturate, which is correct -- an infinity is on a definite
+  side of every threshold, a NaN is on no side of any.
+- **`python -O` deleted every emitter self-check.** Both read-backs, the `n <= MAX_N` guard and
+  the golden model's group-divisibility check were `assert`s, so under `-O` a build with a
+  reversed address concatenation on disk completed and reported nothing. They are now real
+  exceptions; the read-backs raise `EmitterMismatch(ValueError)`.
+- **A `results` field that was not a mapping ended the build in a traceback**
+  (`TypeError: 'int' object is not iterable`), over a value that reaches one comment line.
+- **`verify.py` emitted a `SyntaxWarning` on every import** -- a Windows path in a non-raw
+  string.
+
+### Changed
+
+- **`build` reports when a threshold sits on the word's rail.** `saturation_is_lossless()` was
+  defined, named by `quantize()`'s docstring as the check to use, and called by nothing; the
+  tool used the inclusive `fits_in_word` instead. A format can now be reported as lossless
+  *except at that rail*, qualified in the line that makes the claim rather than only in a
+  warning below it.
+- `BuildReport` gained `saturation_lossless`.
+
 ## 0.2.0
 
 ⚠️ **Upgrade if you are on 0.1.0.** It emits wrong core-level test vectors for any model whose

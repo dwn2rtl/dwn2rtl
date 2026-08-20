@@ -236,6 +236,7 @@ reasoning, and writing only the ledger makes anyone catching up read a diary.
 | **5** | **publish it** — a GitHub org, packaging metadata, a Trusted Publishing workflow, a TestPyPI rehearsal, and `0.1.0` on PyPI | ✅ closed |
 | **6** | **make it legible, and get a second opinion** — a user guide, comments cut to the traps, and Verilator in CI as a linter and a second simulator | ✅ closed |
 | **7** | **harden it, then ship the fixes** — adversarial audits, coverage and mutation testing, macOS and the dependency floors in CI, and `0.2.0` on PyPI | ✅ closed |
+| **8** | **audit the seams the last audit left** — re-attack on the axes phase 7 §3.1 names, and correct two earlier headlines that claimed more ground than they measured | ✅ closed |
 
 **Phase 1 is the milestone.** Everything before it is scaffolding and everything after is
 packaging: a trained DWN goes in and a simulator certifies the Verilog bit-exact against the
