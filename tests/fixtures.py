@@ -131,6 +131,14 @@ SHAPES = {
     'odd_width':   dict(n_features=6,  z=3, layers=(12, 9), n=2, num_classes=3),
 }
 
+# ⚠️ NOT IN `SHAPES`, and the reason is a real constraint rather than an oversight. Every shape
+# above must discriminate all of its classes and keep a popcount group of at least 3, which a
+# 257-class model cannot do at a size worth simulating: it would need 771 nodes and would still
+# land on a handful of classes with untrained tables. Weakening either invariant to admit it
+# would cost more than it buys, so the class-width axis is pinned by its own test instead --
+# test_build.py, test_index_width_above_a_byte_is_gated. See phase8-ledger.md §1.
+WIDE_INDEX = dict(n_features=8, z=3, layers=(257,), n=2, num_classes=257)
+
 
 def extract_layers(ck):
     """The checkpoint's (tables, wiring, kind) per layer -- what the emitters and golden model

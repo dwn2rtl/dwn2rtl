@@ -26,8 +26,14 @@ module dwn_top_tb;
 
     // x_quant.hex packs feature f at [f*WORD +: WORD], two's complement, so the whole feature
     // vector is one X_W-bit word per line -- exactly what dwn_top's x_flat port expects.
+    // ⚠️ EXP_W IS NOT IDX_W -- see the same block in dwn_core_tb.v. Too narrow and a design
+    // with more than 256 classes fails its own gate while being bit-exact; equal to IDX_W and
+    // a wrong IDX_W narrows the comparison instead of breaking it. Wider, with class_idx
+    // zero-extended to meet it, is the only width that fails in both directions.
+    localparam integer EXP_W = 32;
+
     reg [X_W-1:0] vectors  [0:N_TOP-1];
-    reg [7:0]     expected [0:N_TOP-1];
+    reg [EXP_W-1:0] expected [0:N_TOP-1];
 
     reg              clk = 1'b0;
     reg  [X_W-1:0]   x_flat;
@@ -65,12 +71,12 @@ module dwn_top_tb;
                 // !== not != : an x or z must count as a failure rather than propagating
                 // silently into a comparison that returns x. Undriven encoder bits are a real
                 // possibility here in a way they are not at the core level.
-                if (class_idx !== expected[j][IDX_W-1:0]) begin
+                if ({{(EXP_W-IDX_W){1'b0}}, class_idx} !== expected[j]) begin
                     if (first_bad == -1) first_bad = j;
                     errors = errors + 1;
                     if (errors <= 10)
                         $display("  MISMATCH vector %0d: rtl=%0d golden=%0d",
-                                 j, class_idx, expected[j][IDX_W-1:0]);
+                                 j, class_idx, expected[j]);
                 end
             end
         end

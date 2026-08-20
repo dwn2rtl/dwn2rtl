@@ -18,14 +18,29 @@ module dwn_core_tb;
 
     localparam integer N_VEC   = `N_VEC;
     localparam integer VEC_W   = `VEC_W;
+    localparam integer IDX_W   = `IDX_W;
     localparam integer LATENCY = `DWN_CORE_LATENCY;
 
+    // ⚠️ EXP_W IS NOT IDX_W, and both halves of that matter.
+    //
+    // Too narrow and the gate breaks on correct hardware: this was `reg [7:0]`, so at more than
+    // 256 classes IDX_W reached 9, `expected[j][IDX_W-1:0]` read past the end of the reg and
+    // returned x, and !== failed EVERY vector on a design that was bit-exact. K=256 passed,
+    // K=257 failed 100% (phase8-ledger.md §1).
+    //
+    // Equal to IDX_W and the comparison stops being able to fail: phase6-ledger.md §26 found
+    // that slicing BOTH sides to IDX_W means a wrong IDX_W narrows the check rather than
+    // breaking it. So `expected` is deliberately WIDER, and class_idx is zero-extended up to
+    // it -- a golden answer that does not fit the index width now mismatches instead of being
+    // truncated into agreement.
+    localparam integer EXP_W = 32;
+
     reg [VEC_W-1:0] vectors  [0:N_VEC-1];
-    reg [7:0]       expected [0:N_VEC-1];
+    reg [EXP_W-1:0] expected [0:N_VEC-1];
 
     reg              clk = 1'b0;
     reg  [VEC_W-1:0] x;
-    wire [`IDX_W-1:0]       class_idx;
+    wire [IDX_W-1:0] class_idx;
 
     always #5 clk = ~clk;          // 100 MHz, the Basys 3 board clock
 
@@ -58,12 +73,12 @@ module dwn_core_tb;
                 j = i - LATENCY;
                 // !== not != : an x or z must count as a failure rather than propagating
                 // silently into a comparison that returns x.
-                if (class_idx !== expected[j][`IDX_W-1:0]) begin
+                if ({{(EXP_W-IDX_W){1'b0}}, class_idx} !== expected[j]) begin
                     if (first_bad == -1) first_bad = j;
                     errors = errors + 1;
                     if (errors <= 10)
                         $display("  MISMATCH vector %0d: rtl=%0d golden=%0d",
-                                 j, class_idx, expected[j][`IDX_W-1:0]);
+                                 j, class_idx, expected[j]);
                 end
             end
         end
