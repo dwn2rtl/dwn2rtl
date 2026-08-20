@@ -110,7 +110,9 @@ an external program the user installs themselves:
 - **Icarus Verilog** (`iverilog`) — the default target. Ships as a prebuilt Windows binary in the
   [OSS CAD Suite](https://github.com/YosysHQ/oss-cad-suite-build); `apt install iverilog` or
   `brew install icarus-verilog` elsewhere.
-- **Verilator**, later.
+- **Verilator**, on Linux and macOS: `dwn2rtl verify rtl/ --simulator verilator`. iverilog
+  stays the default because it is far faster here -- 0.38 s against 14.7 s end to end,
+  since Verilator compiles to C++ before running.
 - **yosys**, optional, only for `dwn2rtl estimate`.
 
 `verify` searches PATH and reports what it found. No vendor licence is required for any of this,
@@ -233,6 +235,7 @@ reasoning, and writing only the ledger makes anyone catching up read a diary.
 | **4** | **measure, then optimize** — `estimate` via yosys, then changes justified by measurement | ✅ closed |
 | **5** | **publish it** — a GitHub org, packaging metadata, a Trusted Publishing workflow, a TestPyPI rehearsal, and `0.1.0` on PyPI | ✅ closed |
 | **6** | **make it legible, and get a second opinion** — a user guide, comments cut to the traps, and Verilator in CI as a linter and a second simulator | ✅ closed |
+| **7** | **harden it, then ship the fixes** — adversarial audits, coverage and mutation testing, macOS and the dependency floors in CI, and `0.2.0` on PyPI | ✅ closed |
 
 **Phase 1 is the milestone.** Everything before it is scaffolding and everything after is
 packaging: a trained DWN goes in and a simulator certifies the Verilog bit-exact against the
