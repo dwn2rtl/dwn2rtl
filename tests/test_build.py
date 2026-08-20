@@ -378,7 +378,7 @@ def test_a_golden_answer_wider_than_the_index_is_a_mismatch(tmp_path):
 
 @pytest.mark.sim
 def test_the_two_levels_test_different_things(tmp_path):
-    """The split is what makes a failure localize itself, so the two must not be the same run.
+    """The split is what tells a user which half broke, so the two must not be the same run.
 
     Different vector counts prove it: the core level drives pre-binarized bits, the top level
     drives quantized features and gets per-feature threshold edge cases the core cannot have.
@@ -389,8 +389,9 @@ def test_the_two_levels_test_different_things(tmp_path):
 
     assert 'PASS' in core and 'PASS' in top
     assert r.vectors['core']['count'] != r.vectors['top']['count']
-    assert 'dwn_core vs golden' in core
-    assert 'dwn_top (encoder + core)' in top
+    # Each level must NAME itself, so a transcript pasted into a bug report is unambiguous.
+    assert 'dwn_core vs the software model' in core
+    assert 'dwn_top (encoder + network)' in top
 
 
 @pytest.mark.sim

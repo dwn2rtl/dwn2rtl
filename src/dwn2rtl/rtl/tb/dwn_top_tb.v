@@ -1,7 +1,7 @@
-// GATE 1, TOP LEVEL -- quantized features in, class index out.
+// The whole design: quantized features in, class index out.
 //
-// Quantized features through the encoder AND the core -- the other half of dwn_core_tb, which
-// drives pre-binarized bits. Read the pair together:
+// This drives the encoder AND the network, where dwn_core_tb drives the network alone. Read
+// the pair together:
 //
 //     core PASS, top FAIL   -> the encoder. Nothing else needs re-examining.
 //     core FAIL, top FAIL   -> the network; fix that first, this follows.
@@ -75,7 +75,7 @@ module dwn_top_tb;
                     if (first_bad == -1) first_bad = j;
                     errors = errors + 1;
                     if (errors <= 10)
-                        $display("  MISMATCH vector %0d: rtl=%0d golden=%0d",
+                        $display("  MISMATCH vector %0d: rtl=%0d expected=%0d",
                                  j, class_idx, expected[j]);
                 end
             end
@@ -83,10 +83,10 @@ module dwn_top_tb;
 
         $display("");
         $display("========================================");
-        $display("GATE 1 -- dwn_top (encoder + core) vs golden model");
+        $display("dwn_top (encoder + network) vs the software model");
         $display("  vectors tested : %0d", N_TOP);
         $display("  feature word   : %0d bits", X_W);
-        $display("  latency        : %0d cycles, II=1 (new vector every clock)", LATENCY);
+        $display("  latency        : %0d cycles, one result per clock (II=1)", LATENCY);
         $display("  mismatches     : %0d", errors);
         if (errors == 0) begin
             $display("  RESULT         : PASS (bit-exact on every vector)");
