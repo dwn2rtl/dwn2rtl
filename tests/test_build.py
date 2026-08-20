@@ -239,6 +239,52 @@ def test_a_degenerate_model_is_warned_about(tmp_path):
     assert any('ONE class' in w for w in r.warnings)
 
 
+def _oversized_thermometer(shape, factor=2):
+    """The same model with a thermometer from a different (larger) training run.
+
+    Every wiring index still fits, so the range check cannot see it -- and for a FIXED first
+    layer nothing states the expected input width either.
+    """
+    import numpy as np
+    import torch
+    ck = fixtures.make_checkpoint(**shape)
+    n_features, z = ck['thermometer']['thresholds'].shape
+    rng = np.random.default_rng(1)
+    big = np.sort(rng.uniform(-1, 1, size=(n_features * factor, z)), axis=1)
+    ck['thermometer']['thresholds'] = torch.from_numpy(big.astype(np.float32))
+    return ck
+
+
+def test_a_mismatched_thermometer_is_refused_when_the_first_layer_is_learnable(tmp_path):
+    """`weights` is (input_size, ...), so the layer states its own input width. Exact."""
+    from dwn2rtl.checkpoint import CheckpointError
+    ck = _oversized_thermometer(dict(fixtures.SHAPES['tiny']))
+    with pytest.raises(CheckpointError, match='does not match this model'):
+        build(ck, str(tmp_path / 'rtl'), input_bits=8)
+
+
+def test_a_mismatched_thermometer_is_warned_about_when_the_first_layer_is_fixed(tmp_path):
+    """⚠️ phase8-ledger.md §2. A fixed mapping is a list of indices and states no input width,
+    so the exact check above cannot run: this model builds and PASSES the gate while putting
+    real features in the wrong bit positions.
+
+    Trailing features driving no comparator are the signature. A warning, never a refusal --
+    a genuinely lopsided model has dead features too, and refusing one would be worse than
+    the bug.
+    """
+    shape = dict(fixtures.SHAPES['tiny'], first_layer='fixed')
+    r = build(_oversized_thermometer(shape), str(tmp_path / 'rtl'), input_bits=8)
+    assert any('drive no comparator' in w and 'different training run' in w
+               for w in r.warnings)
+
+
+@pytest.mark.parametrize('shape', ALL_SHAPES)
+def test_a_matched_thermometer_raises_no_dead_feature_warning(shape, tmp_path):
+    """The other half of the pair: the signature must not fire on the models we ship."""
+    r = build(fixtures.make(shape), str(tmp_path / 'rtl'), input_bits=8)
+    assert not any('drive no comparator' in w for w in r.warnings)
+
+
 # ---------------------------------------------------------------------------------------
 # THE GATE
 # ---------------------------------------------------------------------------------------
@@ -289,6 +335,45 @@ def test_gate_top_is_bit_exact(shape, tmp_path):
     assert 'PASS (bit-exact on every vector)' in stdout, stdout
     assert 'mismatches     : 0' in stdout, stdout
     assert f'vectors tested : {r.vectors["top"]["count"]}' in stdout
+
+
+@pytest.mark.sim
+@pytest.mark.parametrize('num_classes,idx_w', [(256, 8), (257, 9)])
+def test_index_width_above_a_byte_is_gated(num_classes, idx_w, tmp_path):
+    """⚠️ phase8-ledger.md §1. Both testbenches held the golden answer in a `reg [7:0]`, so at
+    IDX_W = 9 the slice `expected[j][IDX_W-1:0]` read past the end of the reg, returned x, and
+    !== failed EVERY vector on bit-exact hardware. 256 passed, 257 did not.
+
+    Both sides of the boundary, because a fix that moved it rather than removing it would
+    still pass a one-sided test. `num_classes` had only ever been 2, 3 or 10.
+    """
+    import numpy as np
+    ck = fixtures.make_checkpoint(**dict(fixtures.WIDE_INDEX, num_classes=num_classes,
+                                         layers=(num_classes,)))
+    r = build(ck, str(tmp_path / 'rtl'), input_bits=8, n_random=8)
+    assert int(np.ceil(np.log2(num_classes))) == idx_w
+
+    for tb in ('dwn_core_tb.v', 'dwn_top_tb.v'):
+        stdout = run_gate(r.outdir, os.path.join('tb', tb))
+        assert 'mismatches     : 0' in stdout, f'{tb}\n{stdout}'
+
+
+@pytest.mark.sim
+def test_a_golden_answer_wider_than_the_index_is_a_mismatch(tmp_path):
+    """The other direction, and the reason `expected` is wider than IDX_W rather than equal.
+
+    phase6-ledger.md §26: slicing both sides to IDX_W means a wrong IDX_W NARROWS the
+    comparison instead of breaking it, so a truncating bug agrees with itself. Corrupting one
+    golden answer to a value that does not fit the index width must now FAIL.
+    """
+    r = build(fixtures.make('ten_class'), str(tmp_path / 'rtl'), input_bits=8)
+    path = os.path.join(r.outdir, 'expected.hex')
+    lines = open(path).read().splitlines()
+    lines[0] = '1F4'                    # 500 -- far outside a 4-bit index
+    open(path, 'w').write('\n'.join(lines) + '\n')
+
+    stdout = run_gate(r.outdir, os.path.join('tb', 'dwn_core_tb.v'))
+    assert 'mismatches     : 0' not in stdout, stdout
 
 
 @pytest.mark.sim
@@ -665,3 +750,135 @@ def test_every_generated_file_says_which_version_wrote_it(tmp_path):
         if name.endswith('.hex'):
             head = open(os.path.join(outdir, name), encoding='utf-8').readline()
             assert '//' not in head, f'{name} must stay parseable by $readmemh'
+
+
+# ---------------------------------------------------------------------------------------
+# `python -O` -- the flag that deletes checks
+# ---------------------------------------------------------------------------------------
+
+_UNDER_O = '''
+import sys, json
+sys.path.insert(0, {tests!r})
+import fixtures
+from dwn2rtl.build import build
+
+assert_stripped = True
+try:
+    assert False
+except AssertionError:
+    assert_stripped = False
+
+ck = fixtures.make_checkpoint(n_features=8, z=4, layers=(14, 7), n=7, num_classes=7)
+try:
+    build(ck, {out!r}, n_random=4)
+    caught = None
+except Exception as e:
+    caught = type(e).__name__
+print(json.dumps({{'stripped': assert_stripped, 'caught': caught}}))
+'''
+
+
+@pytest.mark.parametrize('flags', [[], ['-O']])
+def test_the_table_width_guard_survives_python_dash_o(flags, tmp_path):
+    """⚠️ phase8-ledger.md §4. `n <= MAX_N` and both emitters' entire read-back were `assert`,
+    and `python -O` deletes those. Under -O a model with n=7 built and emitted tables silently
+    truncated to lut_node's 64-bit TABLE, and a planted reversed address concatenation
+    completed the build reporting nothing.
+
+    Run as a subprocess, because -O is decided at interpreter start and cannot be switched on
+    inside a running test. Both modes, so the test proves the guard is flag-independent rather
+    than merely present.
+    """
+    import json
+    import sys
+
+    src = _UNDER_O.format(tests=os.path.dirname(__file__), out=str(tmp_path / 'rtl'))
+    run = subprocess.run([sys.executable, *flags, '-c', src],
+                         capture_output=True, text=True)
+    assert run.returncode == 0, run.stderr
+    result = json.loads(run.stdout.strip().splitlines()[-1])
+
+    assert result['stripped'] == bool(flags), 'the -O run must actually have asserts stripped'
+    assert result['caught'] == 'ValueError', (
+        f'n=7 must be refused whatever the interpreter flags; got {result["caught"]}')
+
+
+def test_a_corrupted_emission_is_caught_by_the_read_back(tmp_path):
+    """The read-back's own regression test: reverse the address concatenation on disk -- this
+    project's named worst-case bug -- and the emitter must refuse to leave it there.
+    """
+    import re
+
+    import dwn2rtl.emit_core as ec
+    from dwn2rtl.emit_core import EmitterMismatch
+
+    original = ec.emit
+
+    def sabotaged(ck, out_path, *a, **k):
+        result = original(ck, out_path, *a, **k)
+        src = open(out_path).read()
+        src = re.sub(r'\.addr\(\{([^}]*)\}\)',
+                     lambda m: '.addr({%s})' % ', '.join(reversed(m.group(1).split(', '))),
+                     src)
+        open(out_path, 'w').write(src)
+        return result
+
+    ec.emit = sabotaged
+    try:
+        with pytest.raises(EmitterMismatch, match='address bit order is wrong'):
+            build(fixtures.make('tiny'), str(tmp_path / 'rtl'), input_bits=8, n_random=4)
+    finally:
+        ec.emit = original
+
+
+# ---------------------------------------------------------------------------------------
+# THE WORD'S RAIL, and metadata that must not break a design
+# ---------------------------------------------------------------------------------------
+
+def test_a_threshold_on_the_word_rail_is_reported_as_lossy(tmp_path):
+    """⚠️ phase8-ledger.md §6. emit_encoder checked `fits_in_word` (inclusive) while quantize()'s
+    docstring names `saturation_is_lossless` (strict) as the thing to check -- and nothing
+    called the latter at all, though tool-roadmap V4 records it clearing MNIST's Q0.8 against
+    10,000 samples before the port.
+
+    A threshold quantising to exactly the top rail makes saturation lossy: a feature above it
+    saturates onto it, so `q_x > T` is false where `x > t` is true. The gate agrees, because
+    the golden model saturates identically, so nothing but this check can see it.
+    """
+    import torch
+    ck = fixtures.make('tiny')
+    thr = ck['thermometer']['thresholds'].numpy().copy()
+    thr[0, -1] = 511.0 / 256.0          # floor(t * 2**8) == 511 == the top of a 10-bit word
+    ck['thermometer']['thresholds'] = torch.from_numpy(thr)
+
+    r = build(ck, str(tmp_path / 'rtl'), input_bits=8)
+    assert not r.saturation_lossless
+    assert any('rail' in w for w in r.warnings)
+    # The headline claim must be qualified where it is made, not only in the warning.
+    assert 'EXCEPT at the word rail' in '\n'.join(r.lines())
+
+
+@pytest.mark.parametrize('shape', ALL_SHAPES)
+def test_an_ordinary_model_is_lossless_at_the_rail_too(shape, tmp_path):
+    """The other half: the check must not fire on thresholds comfortably inside the word."""
+    r = build(fixtures.make(shape), str(tmp_path / 'rtl'), input_bits=8)
+    assert r.saturation_lossless
+    assert not any('rail' in w for w in r.warnings)
+
+
+@pytest.mark.parametrize('results', [5, 'great', [1, 2], (), 0.5])
+def test_a_results_field_that_is_not_a_mapping_cannot_break_the_build(results, tmp_path):
+    """⚠️ phase8-ledger.md §7. `dict(obj.get('results') or {})` threw a raw TypeError, which the
+    CLI does not catch, so a scalar `results` gave the user a traceback ending inside the
+    loader -- over a field that reaches one comment line.
+
+    phase6-ledger.md §14 fixed a bad value INSIDE the dict and set the rule this restores:
+    metadata must never be able to break a design.
+    """
+    ck = fixtures.make('tiny')
+    ck['results'] = results
+    r = build(ck, str(tmp_path / 'rtl'), input_bits=8)
+
+    header = open(os.path.join(r.outdir, 'dwn_core.v')).read()
+    # Unrecognized, not absent -- "nobody recorded it" and "it is unreadable" are different.
+    assert 'not a mapping' in header

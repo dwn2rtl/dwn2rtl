@@ -17,8 +17,8 @@ import re
 
 import numpy as np
 
-from .emit_core import comment_safe, generated_header
-from .extract import quantize_thresholds, fits_in_word
+from .emit_core import EmitterMismatch, comment_safe, generated_header
+from .extract import quantize_thresholds, fits_in_word, saturation_is_lossless
 
 
 def emit_encoder(ck, used, out_path, frac_bits, word):
@@ -102,7 +102,7 @@ def emit_encoder(ck, used, out_path, frac_bits, word):
 
 
 def emit_top(ck, out_path, total_bits, n_features, num_classes, core_latency,
-             word, pipe_enc=1, core_pipe=(1, 1, 1), used_bits=None):
+             word, pipe_enc=1, core_pipe=(1, 1, 1), used_bits=None, build_id=None):
     idx_w = max(1, int(np.ceil(np.log2(num_classes))))
     latency = pipe_enc + core_latency
     core_lut, core_pop, core_out = core_pipe
@@ -160,6 +160,9 @@ def emit_top(ck, out_path, total_bits, n_features, num_classes, core_latency,
     with open(os.path.join(os.path.dirname(out_path), 'dwn_top_params.vh'), 'w') as f:
         f.write(generated_header('this file') + '\n')
         f.write(f'`define DWN_TOP_LATENCY {latency}\n')
+        # Ties this file to the vectors written by the same build -- see build.build_id().
+        if build_id:
+            f.write(f'`define DWN_BUILD_ID "{build_id}"\n')
     return latency
 
 
@@ -174,17 +177,19 @@ def verify_emitted(path, used, thr_q, z, word):
         b, f_idx, neg, mag = int(m.group(1)), int(m.group(2)), m.group(3), int(m.group(4))
         seen[b] = (f_idx, -mag if neg else mag)
 
-    assert set(seen) == set(used.tolist()), (
-        f'emitted {len(seen)} comparators, expected {used.size}')
+    if set(seen) != set(used.tolist()):
+        raise EmitterMismatch(f'emitted {len(seen)} comparators, expected {used.size}')
     for b, (f_got, t_got) in seen.items():
         f_exp, t_idx = divmod(int(b), z)
         t_exp = int(thr_q[f_exp, t_idx])
-        assert f_got == f_exp, f'bit {b}: feature {f_got} != {f_exp}'
-        assert t_got == t_exp, f'bit {b}: threshold {t_got} != {t_exp}'
+        if f_got != f_exp:
+            raise EmitterMismatch(f'bit {b}: feature {f_got} != {f_exp}')
+        if t_got != t_exp:
+            raise EmitterMismatch(f'bit {b}: threshold {t_got} != {t_exp}')
     return len(seen)
 
 
-def build_encoder(ck, outdir, precision, pipe_enc=1):
+def build_encoder(ck, outdir, precision, pipe_enc=1, build_id=None):
     """Emit thermometer_encoder.v + dwn_top.v + dwn_top_params.vh, then read back and check.
 
     ⚠️ Must run after build_core(): the pipeline depth is read out of dwn_core_params.vh rather
@@ -212,8 +217,22 @@ def build_encoder(ck, outdir, precision, pipe_enc=1):
 
     first = layer_indices(ck['state_dict'])[0]
     extract_tables(ck['state_dict'], first)          # shape assertions
-    wiring, _ = extract_wiring(ck['state_dict'], first, n)
+    wiring, kind = extract_wiring(ck['state_dict'], first, n)
     used = np.unique(wiring)
+
+    # ⚠️ THE HALF OF THE THERMOMETER CHECK THAT CANNOT BE EXACT. checkpoint._validate refuses a
+    # thermometer that does not match a LEARNABLE first layer, because `weights` is
+    # (input_size, ...) and so states the bit count outright. A FIXED mapping is a list of
+    # indices and states nothing, so a thermometer that is too LARGE leaves every index in
+    # range: the design builds, the gate passes -- vectors come from the same wrong assumption
+    # -- and only real features reveal it, in the wrong bit positions (phase8-ledger.md §2).
+    #
+    # What IS observable is the shape of what got left out. A thermometer bigger than its model
+    # leaves whole TRAILING features driving no comparator at all, which is a signature rather
+    # than a proof: a genuinely lopsided model may have dead features too. So it is reported,
+    # never raised -- a heuristic that refuses a legitimate model would be worse than the bug.
+    dead = sorted(set(range(n_features)) - {int(b) // z for b in used.tolist()})
+    trailing = dead == list(range(n_features - len(dead), n_features)) if dead else False
 
     enc_path = os.path.join(outdir, 'thermometer_encoder.v')
     top_path = os.path.join(outdir, 'dwn_top.v')
@@ -235,9 +254,25 @@ def build_encoder(ck, outdir, precision, pipe_enc=1):
     thr_q = emit_encoder(ck, used, enc_path, frac_bits=frac, word=word)
     latency = emit_top(ck, top_path, total_bits, n_features, num_classes, core_latency,
                        word=word, pipe_enc=pipe_enc, core_pipe=core_pipe,
-                       used_bits=int(used.size))
+                       used_bits=int(used.size), build_id=build_id)
 
     seen = verify_emitted(enc_path, used, thr_q, z, word=word)
+
+    # ⚠️ THE CHECK THE DOCS SPECIFY, WHICH NOTHING WAS CALLING. `fits_in_word` above is
+    # INCLUSIVE -- it accepts a threshold sitting exactly on the word's rail -- while
+    # quantize()'s docstring names saturation_is_lossless(), which is STRICT, as the thing to
+    # check. The difference is not academic: a feature above the top threshold saturates to the
+    # rail, `q_x > T` is then false where `x > t` is true, and the build still reports the
+    # format as "provably lossless". The gate agrees, because the golden model saturates the
+    # same way (phase8-ledger.md §6).
+    #
+    # This function did real work before the port -- tool-roadmap.md V4 records it clearing
+    # MNIST's Q0.8 against the full 10,000-sample test set, 0 divergences -- and became
+    # uncalled without anything noticing, because nothing it would have rejected was built.
+    #
+    # Reported, not raised: the affected inputs are ones that saturate anyway, so this is a
+    # narrowing of a claim rather than a broken design.
+    rail_safe = bool(saturation_is_lossless(thr_q, word))
 
     return {
         'encoder_path': enc_path,
@@ -252,4 +287,8 @@ def build_encoder(ck, outdir, precision, pipe_enc=1):
         'latency': latency,
         'pipe_enc': pipe_enc,
         'core_pipe': core_pipe,
+        'saturation_is_lossless': rail_safe,
+        'mapping_kind': kind,
+        'dead_features': dead,
+        'dead_features_trailing': trailing,
     }

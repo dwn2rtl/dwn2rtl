@@ -8,6 +8,7 @@ two independent answers could disagree. It raises FileNotFoundError if called fi
 RTL. build() loads once and passes the layers along; nothing downstream may re-open the file.
 """
 
+import hashlib
 import os
 from dataclasses import dataclass, field
 from importlib.resources import files
@@ -52,6 +53,9 @@ class BuildReport:
     merge: tuple                 # (distinct, total, collapsed) comparators after quantisation
     degenerate: bool
     files: list
+    # False when a threshold sits exactly on the word's rail, so saturation CAN change a
+    # comparison. Separate from precision.proved, which is about where frac_bits came from.
+    saturation_lossless: bool = True
     run_name: str = 'unnamed'
     warnings: list = field(default_factory=list)
 
@@ -78,7 +82,8 @@ class BuildReport:
                 'given': 'from --input-bits, provably lossless',
                 'inferred': "INFERRED from the thresholds' grid, provably lossless",
                 'default': 'DEFAULT for a continuous input, NOT measured',
-            }[p.source]),
+            }[p.source] + ('' if self.saturation_lossless
+                           else ' -- EXCEPT at the word rail, see WARNING')),
         ]
         width = max(len(left) for left, _ in facts)
         out = [f'{left:<{width}}   {right}' for left, right in facts]
@@ -101,6 +106,39 @@ class BuildReport:
         out += [f'WARNING   {w}' for w in self.warnings]
         out.append(f'wrote     {self.outdir} ({len(self.files)} files)')
         return out
+
+
+def build_id(ck, precision, pipeline):
+    """A digest of everything that determines the emitted files. Stamped into all four `.vh`.
+
+    ⚠️ This exists because the RTL and the vectors are written by different steps of one
+    build, and nothing tied them together. Interrupt between them -- a disk error, Ctrl-C, a
+    failing checkpoint on the second run -- and the directory holds NEW RTL beside OLD vectors,
+    which `verify` would compile and report on without noticing. One such directory (an 11-bit
+    encoder against 9-bit vectors) printed RESULT PASS (phase8-ledger.md §5). That is the
+    invariant in CLAUDE.md -- "vectors and RTL must derive from the same checkpoint, or you
+    ship a testbench that passes against wrong RTL" -- with nothing enforcing it at verify time.
+
+    ⚠️ Content, never a uuid or a timestamp: a rebuild of the same checkpoint must stay
+    byte-identical, which is what makes "it passed yesterday" a checkable claim.
+
+    ⚠️ `n_random` and `seed` are deliberately NOT in it. They change which vectors are
+    generated, not whether the vectors and the RTL agree about the model -- a build with more
+    vectors is not a stale one, and folding them in would flag a legitimate directory.
+    """
+    import numpy as np
+
+    h = hashlib.sha256()
+    cfg = ck['config']
+    h.update(repr([cfg['n'], cfg['num_classes'], list(cfg['layers']),
+                   cfg['thermometer_bits']]).encode())
+    h.update(np.ascontiguousarray(ck['thermometer']['thresholds'].numpy()).tobytes())
+    for key in sorted(ck['state_dict']):
+        h.update(key.encode())
+        h.update(np.ascontiguousarray(ck['state_dict'][key].numpy()).tobytes())
+    h.update(repr((precision.word_bits, precision.frac_bits,
+                   pipeline.enc, pipeline.lut, pipeline.pop, pipeline.out)).encode())
+    return h.hexdigest()[:16]
 
 
 def _copy_package_rtl(outdir):
@@ -170,11 +208,15 @@ def build(checkpoint, outdir, input_bits=None, pipeline=None, n_random=None, see
         raise NotADirectoryError(f'--out {outdir} is a file, not a directory')
     os.makedirs(outdir, exist_ok=True)
 
+    # The stamp every generated .vh carries, so `verify` can refuse a directory whose RTL
+    # and vectors came from different builds. Computed BEFORE anything is written.
+    bid = build_id(ck, precision, pipeline)
+
     # 1. the core. Also emits dwn_core_params.vh, which step 2 reads.
-    core = build_core(ck, outdir, pipeline=pipeline)
+    core = build_core(ck, outdir, pipeline=pipeline, build_id=bid)
 
     # 2. the encoder and the top. Must follow (1) -- see the module docstring.
-    enc = build_encoder(ck, outdir, precision, pipe_enc=pipeline.enc)
+    enc = build_encoder(ck, outdir, precision, pipe_enc=pipeline.enc, build_id=bid)
 
     # 3. the golden vectors, labelled by the SAME extracted layers the core was emitted from.
     kwargs = {}
@@ -182,7 +224,7 @@ def build(checkpoint, outdir, input_bits=None, pipeline=None, n_random=None, see
         kwargs['n_random'] = n_random
     if seed is not None:
         kwargs['seed'] = seed
-    vec = generate(ck, core['layers_extracted'], outdir, precision, **kwargs)
+    vec = generate(ck, core['layers_extracted'], outdir, precision, build_id=bid, **kwargs)
 
     # 4. the hand-written modules, so the directory stands alone.
     copied, skipped_tb = _copy_package_rtl(outdir)
@@ -222,6 +264,29 @@ def build(checkpoint, outdir, input_bits=None, pipeline=None, n_random=None, see
         warnings.append(
             'removed a stale input_scaling.json left by an earlier build in this directory. '
             'This model records no scaler, so nothing should be applied to x_flat.')
+    # ⚠️ The half of the thermometer check that cannot be made exact -- see build_encoder(). A
+    # fixed first-layer mapping states nothing about its input width, so a thermometer from
+    # another training run builds clean and PASSES the gate. Trailing features that drive no
+    # comparator are its signature, so they are named here rather than left for a user to
+    # notice in a percentage inside a Verilog header.
+    if enc['dead_features'] and enc['mapping_kind'] == 'fixed':
+        dead = enc['dead_features']
+        shown = ', '.join(str(f) for f in dead[:6]) + (', ...' if len(dead) > 6 else '')
+        if enc['dead_features_trailing']:
+            warnings.append(
+                f'the LAST {len(dead)} of {enc["features"]} features drive no comparator '
+                f'(features {shown}), and this model has a FIXED first-layer mapping, which '
+                'states no input width for the loader to check. That is the signature of a '
+                'thermometer from a different training run -- it would build, pass the gate, '
+                'and put real features in the wrong bit positions. Confirm the thermometer '
+                'was fitted for THIS model.')
+        else:
+            warnings.append(
+                f'{len(dead)} of {enc["features"]} features drive no comparator '
+                f'(features {shown}). Legitimate for a lopsided model; also what a mismatched '
+                'thermometer looks like, and a fixed first-layer mapping gives the loader no '
+                'input width to check against.')
+
     for name in skipped_tb:
         warnings.append(
             f'{name} is EMPTY in the installed package and was not copied -- that level has no '
@@ -231,6 +296,21 @@ def build(checkpoint, outdir, input_bits=None, pipeline=None, n_random=None, see
             'every test vector lands on ONE class. The testbench would pass against a design '
             'whose argmax, popcount and grouping were all wrong, because the right answer is a '
             'constant. Check the checkpoint.')
+    # ⚠️ "Provably lossless" is a claim about the fractional grid, and it does not extend to
+    # the word's rail. A threshold quantising to exactly the largest representable value makes
+    # saturation lossy, and the gate cannot see it because the golden model saturates
+    # identically (phase8-ledger.md §6).
+    if not enc['saturation_is_lossless']:
+        lo_w, hi_w = -(2 ** (precision.word_bits - 1)), 2 ** (precision.word_bits - 1) - 1
+        t_lo, t_hi = enc['threshold_range']
+        at = 'the maximum' if t_hi >= hi_w else 'the minimum'
+        warnings.append(
+            f'a threshold quantises to {at} value {precision} can hold '
+            f'(range [{t_lo}, {t_hi}], word [{lo_w}, {hi_w}]), so a feature past it saturates '
+            'onto the threshold instead of over it and the comparison flips. The format is '
+            'lossless everywhere EXCEPT that rail. Widen the word by one integer bit to '
+            'remove the exception.')
+
     if not precision.proved:
         warnings.append(
             f'fractional width {precision.frac_bits} is a DEFAULT for a continuous input, not '
@@ -263,6 +343,7 @@ def build(checkpoint, outdir, input_bits=None, pipeline=None, n_random=None, see
         vectors=vec,
         merge=comparator_merge_floor(thresholds, precision),
         degenerate=vec['degenerate'],
+        saturation_lossless=enc['saturation_is_lossless'],
         files=emitted + copied,
         run_name=ck.get('run_name', 'unnamed'),
         warnings=warnings,
