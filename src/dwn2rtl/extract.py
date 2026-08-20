@@ -47,7 +47,10 @@ def extract_wiring(state_dict, i, n):
         # one input index per node slot. Node j slot k -> index [j*n + k].
         weights = state_dict[learnable_key].numpy()
         flat = weights.argmax(axis=0)
-        assert flat.size % n == 0
+        if flat.size % n:
+            raise ValueError(
+                f'layer {i} has {flat.size} mapping weights, which is not a multiple of n={n}; '
+                'a learnable mapping is (input_size, output_size * n)')
         return flat.reshape(-1, n).astype(np.int64), 'learnable'
 
     # §3b. Already the final wiring, no transformation.
@@ -76,9 +79,10 @@ def group_sum_argmax(x_bits, num_classes):
     cannot change the argmax and the hardware never needs it -- popcount and compare only.
     """
     width = x_bits.shape[1]
-    assert width % num_classes == 0, (
-        f'final layer width {width} not divisible by num_classes {num_classes}; '
-        'GroupSum would zero-pad silently')
+    if width % num_classes:
+        raise ValueError(
+            f'final layer width {width} not divisible by num_classes {num_classes}; '
+            'GroupSum would zero-pad silently')
     scores = x_bits.reshape(x_bits.shape[0], num_classes, width // num_classes).sum(axis=2)
     return scores.argmax(axis=1), scores
 
@@ -106,8 +110,38 @@ def quantize(x, frac_bits, word_bits):
     do not fix a range problem; they buy precision, not headroom.
     """
     lo, hi = -(2 ** (word_bits - 1)), 2 ** (word_bits - 1) - 1
-    q = np.floor(np.asarray(x, dtype=np.float64) * (2 ** frac_bits))
-    return np.clip(q, lo, hi).astype(np.int64)
+    q = np.floor(np.asarray(x, dtype=np.float64) * (2.0 ** frac_bits))
+
+    # ⚠️ NaN CANNOT SATURATE, so it must not reach the cast. Every comparison against NaN is
+    # False, so it would fall through both branches below and land on int64's most negative
+    # value -- a feature that is missing becoming a feature that is extremely small, silently.
+    # Thresholds already refuse non-finite values for the same reason (precision.py).
+    # Infinities are fine and are left to saturate: they are on a definite side of every
+    # threshold, which is exactly what saturation means.
+    if np.isnan(q).any():
+        raise ValueError(
+            f'{int(np.isnan(q).sum())} of {q.size} feature values are NaN, so they cannot be '
+            'quantized. A NaN feature is not a small one -- it has no side of any threshold.')
+
+    # ⚠️ THE CLIP CANNOT BE DONE IN FLOAT. `np.clip(q, lo, hi)` was the whole implementation,
+    # and float64 has no exact representation of hi = 2**63 - 1: it rounds UP to 2**63, which
+    # int64 cannot hold, so `.astype(np.int64)` overflowed. An input that should have saturated
+    # to +9223372036854775807 came out as -9223372036854775808 -- a sign flip that inverts
+    # every comparator it feeds -- behind a RuntimeWarning nothing reads. Wrong from about a
+    # 55-bit word up; off by one from 54 (phase8-ledger.md §3).
+    #
+    # The gate is blind to this by construction: `build` never calls quantize(), because top
+    # vectors are generated as integers already. It is the user who is told to call it, by
+    # input_scaling.json and the user guide.
+    #
+    # So the bounds are tested against the two values that ARE exact -- both powers of two --
+    # and only values known to fit are ever cast.
+    low = q < float(lo)                       # lo = -2**(word_bits-1), exact in float64
+    high = q >= float(hi + 1)                 # hi + 1 = 2**(word_bits-1), exact in float64
+    out = np.where(low | high, 0.0, q).astype(np.int64)
+    out[low] = lo
+    out[high] = hi
+    return out
 
 
 def saturation_is_lossless(thr_q, word_bits):
