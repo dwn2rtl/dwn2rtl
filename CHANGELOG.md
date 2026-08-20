@@ -1,12 +1,17 @@
 # Changelog
 
-## Unreleased
+## 0.3.0
 
-⚠️ **Two of these are silent-wrong fixes.** A model whose first layer has a fixed mapping could
-be built against a thermometer from a different training run -- clean build, `PASS` on both
-levels, real features in the wrong bit positions. And a directory holding RTL from one build
-beside vectors from another could report `PASS`, which is a check of the wrong pairing rather
-than a check of your design.
+⚠️ **Upgrade if you are on 0.2.0. Two of these are silent-wrong fixes.** A model whose first
+layer has a fixed mapping could be built against a thermometer from a different training run --
+clean build, `PASS` on both levels, real features in the wrong bit positions. And a directory
+holding RTL from one build beside vectors from another could report `PASS`, which is a check of
+the wrong pairing rather than a check of your design.
+
+⚠️ **Two behaviours changed rather than being fixed**, so a script relying on the old ones will
+notice: `verify` now refuses a directory whose RTL and vectors came from different builds, and
+`quantize()` now raises on a NaN feature where it used to return int64's minimum. Both are
+corrections; both can turn a previously "working" run into a loud failure, which is the point.
 
 Full record in `docs/phase8-ledger.md`; the retrospective is `docs/phase8-report.md`.
 

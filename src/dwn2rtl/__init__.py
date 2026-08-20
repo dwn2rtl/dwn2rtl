@@ -8,7 +8,7 @@ is numpy -- and `dwn2rtl verify` reads no checkpoint at all, so paying seconds o
 for it would be pure waste. The submodules that need torch import it themselves.
 """
 
-__version__ = '0.2.0'
+__version__ = '0.3.0'
 
 # Eager: neither needs a checkpoint or torch.
 from .config import BuildConfig, Pipeline
