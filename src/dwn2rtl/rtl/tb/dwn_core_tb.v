@@ -1,7 +1,7 @@
-// GATE 1 -- the one non-negotiable rule.
+// Checks the LUT network against the software model, on already-binarized inputs.
 //
-// The LUT core against the golden model, on pre-binarized inputs. The encoder is checked
-// separately by dwn_top_tb, so a failure points at one of the two rather than both.
+// The encoder is checked separately by dwn_top_tb, so if one of them fails you know which
+// half to look at.
 //
 // Vectors stream one per cycle and are checked LATENCY cycles later, which is what proves II=1.
 //
@@ -77,7 +77,7 @@ module dwn_core_tb;
                     if (first_bad == -1) first_bad = j;
                     errors = errors + 1;
                     if (errors <= 10)
-                        $display("  MISMATCH vector %0d: rtl=%0d golden=%0d",
+                        $display("  MISMATCH vector %0d: rtl=%0d expected=%0d",
                                  j, class_idx, expected[j]);
                 end
             end
@@ -85,9 +85,9 @@ module dwn_core_tb;
 
         $display("");
         $display("========================================");
-        $display("GATE 1 -- dwn_core vs golden model");
+        $display("dwn_core vs the software model");
         $display("  vectors tested : %0d", N_VEC);
-        $display("  latency        : %0d cycles, II=1 (new vector every clock)", LATENCY);
+        $display("  latency        : %0d cycles, one result per clock (II=1)", LATENCY);
         $display("  mismatches     : %0d", errors);
         if (errors == 0) begin
             $display("  RESULT         : PASS (bit-exact on every vector)");

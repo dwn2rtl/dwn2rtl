@@ -1,53 +1,52 @@
-# DWN checkpoint format — what the exporter reads
+# What dwn2rtl reads out of a checkpoint
 
-## The pin
+If you're writing your own exporter, or you want to know exactly what the tool is looking at, this
+is the reference. Everything here was read straight out of the upstream DWN source — not guessed
+from the paper, not inferred from tensor shapes, and not assumed from PyTorch convention. Get any
+of it wrong and you get an exporter that looks fine and silently emits the wrong wiring.
+
+## Which version this describes
 
 ```
 upstream   https://github.com/alanbacellar/DWN
 commit     9f887a0b4bd84dabf6d8c9ae35368ab2a7e0e3c0   ("9f887a0")
-verified   2026-08-13, independently, by this project
+verified   2026-08-13
 ```
 
-**dwn2rtl does not depend on that package** — nothing in it is imported, at build time or ever.
-The pin is what this document's claims are *about*: it names the source that was read, so a
-reader can check it and a maintainer knows what to re-read when upstream moves.
+**dwn2rtl doesn't depend on that package.** Nothing imports it, at build time or ever. The commit
+is here so you can check these claims yourself, and so a maintainer knows what to re-read when
+upstream moves.
 
-**Source of truth.** Everything below was read directly from the upstream source at that commit,
-not inferred from the paper, from tensor shapes, or from PyTorch convention. Getting it wrong
-produces an exporter that looks correct and silently emits wrong wiring.
+The files it was read from: `src/torch_dwn/lut_layer.py`, `src/torch_dwn/mapping.py`,
+`src/torch_dwn/utils.py`, `src/torch_dwn/custom_operators/cuda/efd_cuda_kernel.cu` (the forward
+kernel), and `examples/mnist.py`.
 
-Files read: `src/torch_dwn/lut_layer.py`, `src/torch_dwn/mapping.py`, `src/torch_dwn/utils.py`,
-`src/torch_dwn/custom_operators/cuda/efd_cuda_kernel.cu` (forward kernel), `examples/mnist.py`.
+This document is older than the tool, so rather than trusting what it already said, every claim
+that matters was checked against the source a second time:
 
-### Re-verified independently, 2026-08-13
-
-This document predates the split into a standalone tool, and the pin was deliberately not taken
-on trust: it was re-established here independently rather than carried forward.
-
-Done. Each load-bearing claim was checked against the source again rather than carried forward:
-
-| § | claim | confirmed |
+| § | the claim | where it's confirmed |
 |---|---|---|
 | 1 | a table bit is `luts[j][addr] > 0`, **strictly** greater | `STEFunction.forward` is `(x > 0).float()` |
 | 2 | mapping slot `l` is address bit `l` — **LSB first** | `addr \|= (input[mapping[j][l]] > 0) << l` |
 | 3a | learnable wiring is `weights.argmax(dim=0)` | `mapping.py:17` |
-| 3c | `__dummy_mapping` is a decoy, only `arange` reshaped | `lut_layer.py:60` |
-| 4 | `GroupSum` carries `k` and `tau` and has **no parameters** | `utils.py:11-16` |
+| 3 | `__dummy_mapping` is a decoy — just `arange` reshaped | `lut_layer.py:60` |
+| 4 | `GroupSum` holds `k` and `tau` and has **no parameters** | `utils.py:11-16` |
 
-That last one is why `num_classes` cannot be recovered from a `state_dict` and must come off the
-live module — see `checkpoint.py`.
+That last row is the reason `num_classes` can't be recovered from a `state_dict` at all, and has
+to come off the live module instead.
 
-If the pin ever moves, re-read all of it. Nothing below is safe to carry forward on faith.
+If that commit ever moves, re-read all of it. None of this is safe to carry forward on faith.
 
-> ⚠️ **Upstream's `LUTLayer` forward requires CUDA** — the CPU path raises. That is not a
-> constraint on dwn2rtl, which never runs a model, but it is why the worked example builds its
-> own stand-in classes rather than importing `torch_dwn`.
+> ⚠️ **Upstream's `LUTLayer` forward needs CUDA** — the CPU path raises. That's not a constraint on
+> dwn2rtl, which never runs a model, but it's why the worked example builds its own stand-in
+> classes instead of importing `torch_dwn`.
 
 ---
 
-## 1. A LUT node's output bit
+## 1. What a node outputs
 
-`LUTLayer.forward` runs EFD and then, with `ste=True` (the default), `STEFunction`:
+`LUTLayer.forward` runs EFD, then passes the result through `STEFunction` (which is on by
+default):
 
 ```python
 # utils.py
@@ -57,9 +56,10 @@ class STEFunction(torch.autograd.Function):
         return (x > 0).float()
 ```
 
-and EFD's forward is a plain table lookup (`efd_cuda_kernel.cu`):
+and EFD's forward is a plain table lookup:
 
 ```cuda
+// efd_cuda_kernel.cu
 output[i][j] = luts[j][addr];
 ```
 
@@ -69,12 +69,13 @@ So the hardware bit for node `j` at address `addr` is:
 bit = (luts[j][addr] > 0)
 ```
 
-**Strictly `> 0`, not `>= 0`.** An entry of exactly `0.0` emits 0. Unlikely in a trained model but
-it is a real edge case, and Gate 1 covers edge cases, so the golden model must use `>`.
+**Strictly greater than zero, not greater-or-equal.** An entry of exactly `0.0` gives you a 0.
+That's unlikely in a trained model, but it's a real case and the test vectors include edge cases,
+so the software model has to use `>` as well.
 
-`luts` has shape `(output_size, 2**n)` and dtype float32.
+`luts` is `(output_size, 2**n)`, float32.
 
-### The `[-1, 1]` range is deliberate
+### Values pegged at ±1 are normal
 
 ```python
 # lut_layer.py, forward()
@@ -83,15 +84,15 @@ if self.training and self.clamp_luts:
         self.luts.clamp_(-1, 1)
 ```
 
-Tables are initialised uniform in `[-1, 1]` (`torch.rand(...)*2 - 1`) and clamped back into that
-range on every training forward pass. **Seeing `range [-1.000, 1.000]` in a checkpoint is normal and
-expected, not a sign of a saturated or broken model.** Only the sign is ever used at inference.
+Tables start out uniform in `[-1, 1]` and get clamped back into that range on every training
+step. So if you open a checkpoint and see `range [-1.000, 1.000]`, that's expected — it isn't a
+saturated or broken model. Only the sign is ever used at inference anyway.
 
 ---
 
-## 2. Address construction — LSB first
+## 2. How the address is built — LSB first
 
-From the forward kernel:
+Straight from the forward kernel:
 
 ```cuda
 uint addr = input[i][mapping[j][0]] > 0;
@@ -99,22 +100,22 @@ for(int l = 1; l < mapping.size(1); ++l)
     addr |= (uint)(input[i][mapping[j][l]] > 0) << l;
 ```
 
-**Mapping slot `l` contributes bit `l` of the address. Slot 0 is the LSB.**
+**Slot `l` of the mapping becomes bit `l` of the address. Slot 0 is the least significant bit.**
 
-This is the single easiest thing in the whole project to get backwards, and reversing it produces a
-model that is wrong on most inputs while still looking structurally plausible. The RTL's address
-concatenation must match this, and the golden model must assert it.
+This is the easiest thing in the whole project to get backwards, and if you reverse it you get a
+model that's wrong on most inputs while looking entirely plausible. Your RTL's address
+concatenation has to match this, and your software model should check that it does.
 
-Input bits are thresholded `> 0` here too, so the layer treats any positive value as 1.
+Input bits are thresholded `> 0` here too, so anything positive counts as a 1.
 
 ---
 
-## 3. Wiring — two completely different representations
+## 3. Wiring — two representations that share no code
 
-A `LUTLayer` stores its mapping one of two ways depending on how it was constructed. **The exporter
-needs both paths**; they share no code.
+A `LUTLayer` stores its mapping one of two ways, depending on how it was built. **Your exporter
+needs both.**
 
-### 3a. `mapping='learnable'`
+### 3a. Learnable mapping
 
 ```python
 # lut_layer.py
@@ -129,38 +130,40 @@ mapping = weights.argmax(dim=0)
 output = x[:, mapping]
 ```
 
-- `weights` has shape `(input_size, output_size * n)` — e.g. `(128, 1800)` for 128 input bits and
-  300 nodes at n=6.
-- **`argmax(dim=0)`** over the input-bit axis yields `output_size * n` indices, one per node slot.
-- Node `j`, slot `k` reads input bit `weights.argmax(dim=0)[j*n + k]`.
+`weights` is `(input_size, output_size * n)` — so `(128, 1800)` for 128 input bits and 300 nodes
+at n=6. Taking `argmax(dim=0)` down the input-bit axis gives you one index per node slot, and node
+`j` slot `k` reads input bit `weights.argmax(dim=0)[j*n + k]`.
 
-The argmax is input-independent, so it is resolved once at export and costs nothing in hardware —
-this is the paper's "Learnable Mapping is free at inference" claim (brief §4), confirmed in code.
+That argmax doesn't depend on the input, so you resolve it once when exporting and it costs
+nothing in hardware. This is the paper's claim that learnable mapping is free at inference, and it
+holds up in the code.
 
-`tau` (default `lm_tau=0.001`) appears only in the *backward* pass. It has no effect on export.
+`tau` (`lm_tau`, default `0.001`) only shows up in the backward pass. It has no effect on export.
 
-### 3b. `mapping='random'`, `'arange'`, or an explicit tensor
+### 3b. Fixed mapping
 
 ```python
 self.mapping = torch.nn.Parameter(layer_mapping(...), requires_grad=False)
 ```
 
-A plain `(output_size, n)` int32 tensor, already the final wiring. Node `j` slot `k` reads input bit
-`mapping[j][k]`. No argmax, no transformation.
+Used for `mapping='random'`, `'arange'`, or an explicit tensor. It's a plain `(output_size, n)`
+int32 tensor that's already the final wiring — node `j` slot `k` reads input bit `mapping[j][k]`.
+No argmax, no transformation.
 
-### ⚠️ `_LUTLayer__dummy_mapping` is a decoy
+### ⚠️ `_LUTLayer__dummy_mapping` is a trap
 
-It appears in `state_dict` for learnable layers as a name-mangled `(output_size, n)` int32 tensor —
-the *same shape and dtype* as a real 3b mapping. It is only `arange(output_size*n)` reshaped,
-because after `x[:, mapping]` gathers the inputs the kernel reads consecutive slots.
+Learnable layers put this in their `state_dict` under a name-mangled key, and it's an
+`(output_size, n)` int32 tensor — *the same shape and dtype as a real fixed mapping*. It's only
+`arange(output_size*n)` reshaped, because once `x[:, mapping]` has gathered the inputs, the kernel
+just reads consecutive slots.
 
-**Exporting it as if it were the wiring yields a structurally valid, completely wrong model.** Key
-off whether the layer has a `LearnableMapping` (i.e. whether `<i>.mapping.weights` exists in the
-`state_dict`), never off tensor shape.
+**Export it as if it were the wiring and you get a structurally valid, completely wrong model.**
+Decide which representation you're looking at by checking whether `<i>.mapping.weights` exists —
+never by tensor shape.
 
 ---
 
-## 4. Output stage — `GroupSum`
+## 4. The output stage — `GroupSum`
 
 ```python
 # utils.py
@@ -169,32 +172,39 @@ x = x.view(*x.shape[:-1], self.k, int(x.shape[-1]/self.k))
 return x.sum(dim=-1) / self.tau
 ```
 
-- **Groups are contiguous slices, in order.** Class `c`'s score is the popcount of final-layer
-  outputs `[c * (W/k) : (c+1) * (W/k)]`, for final layer width `W`. No interleaving.
-- `randperm` defaults to `False`, so no permutation is applied. If a future config sets it, the
-  permutation is generated at construction and **is not saved in `state_dict`** — such a checkpoint
-  would not be exportable. Don't enable it.
-- Division by `tau` is monotonic and identical across classes, so **argmax is unaffected**. The
-  hardware needs the popcount and the argmax only; `tau` can be ignored entirely at inference.
-- `pad_if_needed` zero-pads when `W % k != 0`. This is silent. **Keep final layer width divisible by
-  `num_classes`** or the DSE will produce configs whose hardware and software disagree about group
-  boundaries. Worth an assert in the exporter.
+Four things follow from that.
+
+**Groups are contiguous and in order.** For a final layer of width `W`, class `c`'s score is the
+popcount of outputs `[c * (W/k) : (c+1) * (W/k)]`. Nothing is interleaved.
+
+**`randperm` defaults to `False`**, so no permutation is applied. If some future config turns it
+on, the permutation is generated at construction and **isn't saved in the `state_dict`** — which
+means such a checkpoint can't be exported at all. Leave it off.
+
+**`tau` doesn't matter to you.** Dividing by it is monotonic and identical across every class, so
+it can't change which class wins. The hardware only needs the popcount and the comparison.
+
+**Keep your final layer width divisible by `num_classes`.** If it isn't, `pad_if_needed` silently
+zero-pads, and your hardware and your model end up disagreeing about where each class's group
+starts. Worth refusing outright in an exporter — dwn2rtl does.
 
 ---
 
-## 5. Not needed for export
+## 5. What you can ignore
 
-- `alpha` (default `0.5 * 0.75**(n-1)`, so `0.11865` at n=6) and `beta` (`0.25/0.75`) — EFD backward
-  only.
-- `lm_tau` — LearnableMapping backward only.
-- Everything in the backward kernel.
+None of this is needed for export:
+
+- `alpha` (defaults to `0.5 * 0.75**(n-1)`, so `0.11865` at n=6) and `beta` (`0.25/0.75`) — EFD
+  backward only
+- `lm_tau` — LearnableMapping backward only
+- everything in the backward kernel
 
 ---
 
-## 6. Upstream's reference recipe (`examples/mnist.py`)
+## 6. Upstream's own example
 
-The only worked example shipped at this pin. **There is no JSC example** — the paper's JSC configs
-are not in this repo.
+`examples/mnist.py` is the only worked example shipped at that commit, and it's a useful sanity
+check on what a real DWN looks like:
 
 ```python
 thermometer = dwn.DistributiveThermometer(3).fit(x_train)
@@ -208,25 +218,13 @@ scheduler = torch.optim.lr_scheduler.StepLR(optimizer, gamma=0.1, step_size=14)
 train_and_evaluate(..., epochs=30, batch_size=32)
 ```
 
-Compared against `training/dwn_jsc_kaggle.ipynb` as of the t=8 run:
+Two details worth noticing if you're building your own model:
 
-| Knob | Upstream | Ours | Match? |
-|---|---|---|---|
-| optimizer / lr | Adam, 1e-2 | Adam, 1e-2 | same |
-| scheduler | StepLR, γ=0.1, step 14 | StepLR, γ=0.1, step 14 | same |
-| epochs | 30 | 30 | same |
-| `tau` | `1/0.3` | `1/0.3` | same |
-| mapping pattern | learnable, then random | learnable, then random | same |
-| thermometer | distributive, **3 bits** | distributive, 4→8 bits | ours is richer |
-| **batch_size** | **32** | **256** | **differs, 8×** |
+- **The first layer is learnable and the second is random.** That's the authors' own pattern, not
+  a simplification. dwn2rtl handles both in one checkpoint, which is why §3 covers both paths.
+- **Three thermometer bits is enough for strong MNIST accuracy.** Encoder resolution is a flatter
+  axis than people expect, and since the encoder is often the bigger half of the design (see the
+  [user guide](https://github.com/dwn2rtl/dwn2rtl/blob/main/docs/user-guide.md) §7), spending bits
+  there is expensive.
 
-**This kills the learning-rate hypothesis.** The frozen training loss in the t=4 and t=8 runs cannot
-be blamed on `lr=1e-2` or on the schedule — both are exactly what the authors use to reach the
-paper's MNIST numbers. It also weakens the layer-1-mapping hypothesis, since upstream also leaves
-the second layer random.
-
-`batch_size` is the one place our recipe deviates from the authors'. That makes it the
-evidence-backed next experiment.
-
-Note also that upstream reaches strong MNIST accuracy on a **3-bit** thermometer, which is
-independent support for the t=4 → t=8 finding that encoder resolution is a flat axis.
+There's no JSC example at this commit — the paper's JSC configurations aren't in that repository.
